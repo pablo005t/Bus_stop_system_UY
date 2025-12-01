@@ -1,0 +1,287 @@
+\chapter{Metodología} \label{Capitulo Metodologia}
+
+\section{Fuentes de datos}
+
+El sistema propuesto se apoya en cuatro fuentes principales de información: los microdatos y diccionarios territoriales del Instituto Nacional de Estadística (INE); las capas geoespaciales publicadas por el Ministerio de Transporte y Obras Públicas (MTOP); los datos georreferenciados de centros educativos de la Administración Nacional de Educación Pública (ANEP); y un conjunto de imágenes satelitales obtenidas mediante la API de Google Maps. Estas fuentes constituyen la base de datos sobre la cual se construyen las etapas de detección, verificación y optimización del sistema de paradas.
+
+\subsection{Instituto Nacional de Estadística (INE)}
+
+El \emph{Instituto Nacional de Estadística (INE)} es el organismo público responsable de la producción y difusión de las estadísticas oficiales del Uruguay. En este trabajo, el INE constituye la fuente principal de información demográfica y territorial, a partir de la cual se construyó la base de \emph{población por localidad}.  
+
+Los datos empleados corresponden a los \textbf{microdatos de personas} del Censo, distribuidos en formato \texttt{CSV} (\texttt{personas.csv}), complementados con los diccionarios oficiales de \emph{Localidades} y \emph{Departamentos}.  
+Estos insumos permitieron generar una base consolidada de población georreferenciable, mediante los siguientes pasos:
+
+\begin{itemize}
+    \item Normalización de claves territoriales: se aplicó relleno con ceros a la izquierda y se construyó un identificador único \texttt{LOCALIDAD\_CODE}, resultado de concatenar los códigos de departamento y localidad.
+    \item Agregación de población: se contabilizó el número de personas por \texttt{LOCALIDAD\_CODE} utilizando la biblioteca \texttt{pandas}, generando una tabla de localidades con población asociada.
+    \item Enriquecimiento: se incorporaron denominaciones normalizadas a partir de los diccionarios oficiales del INE, asegurando coherencia tipográfica y compatibilidad entre fuentes.
+    \item Geocodificación: para localidades sin coordenadas confiables, se definió un flujo de geocodificación con \texttt{geopy.Nominatim} (OpenStreetMap), resolviendo pares \((\text{localidad}, \text{departamento}, \text{Uruguay})\) a latitud y longitud.
+\end{itemize}
+
+La base resultante se maneja en el sistema de referencia WGS84 (\texttt{EPSG:4326}) y, cuando se requieren cálculos métricos, se proyecta a UTM 21S (\texttt{EPSG:32721}). Esta información sirve como insumo para estimar la demanda potencial de transporte en el modelo de priorización de paradas.
+
+Se puede acceder a la data anterior \href{https://www.gub.uy/instituto-nacional-estadistica/censos2023pvh}{aquí}.
+
+\subsection{Ministerio de Transporte y Obras Públicas (MTOP)}
+
+El \emph{Ministerio de Transporte y Obras Públicas (MTOP)} es la autoridad nacional encargada de la planificación, construcción y mantenimiento de la infraestructura vial del país. En este estudio se utilizaron las capas geoespaciales publicadas por el MTOP a través de su geoportal institucional y de la Infraestructura de Datos Espaciales (IDE Uruguay).  
+
+En particular, se emplearon dos conjuntos de datos principales:
+\begin{itemize}
+    \item \textbf{Red vial nacional} (\texttt{v\_camineria\_nacional.shp}): eje geométrico de la caminería nacional, con identificación de tramos por jurisdicción y tipo de vía.
+    \item \textbf{Capa de paradas oficiales}: puntos correspondientes a las paradas de transporte público registradas por el MTOP, con atributos básicos de identificación y ubicación.
+\end{itemize}
+
+Ambas capas se cargaron con \texttt{GeoPandas}, se verificó su sistema de referencia de coordenadas (reproyectando a WGS84 cuando fue necesario) y se realizó una depuración inicial para aislar los tramos de jurisdicción nacional.  
+
+Estas capas se utilizaron como referencia territorial para la generación de imágenes satelitales, el análisis de proximidad con localidades y la evaluación del modelo de detección.
+\href{https://geoportal.mtop.gub.uy/}{Enlace al geoportal del MTOP}.
+
+    
+\subsection{Administración Nacional de Educación Pública (ANEP)}
+
+La \emph{Administración Nacional de Educación Pública (ANEP)} es el organismo responsable de la educación pública en Uruguay y administra, entre otros insumos, un sistema de información geográfica de centros educativos.  En este trabajo se utilizaron los datos de centros de enseñanza publicados en el \textbf{Sistema de Información Geográfica de ANEP (SIGANEP)}, accesible a través de un panel de \emph{ArcGIS Dashboards}.
+
+A partir de dicho panel se descargó la capa de puntos de centros educativos con sus coordenadas y atributos asociados (identificador, nombre del centro, subsistema, departamento y localidad).  El procesamiento metodológico siguió los siguientes pasos generales:
+
+\begin{itemize}
+    \item \textbf{Obtención y carga de datos:} se exportó la capa de centros educativos desde el panel SIGANEP y se la incorporó al entorno de trabajo mediante \texttt{GeoPandas}, verificando la estructura de campos y el sistema de referencia de coordenadas reportado por la capa.
+    \item \textbf{Depuración y filtrado:} se seleccionaron los centros educativos activos ubicados en el interior del país con la etiqueta de establecimiento de tipo "Rural" y, en particular, aquellos comprendidos en un entorno de influencia de las rutas nacionales analizadas (1 km de distancia de un corredor internacional). Se eliminaron registros duplicados y se homogenizaron denominaciones de departamentos y localidades para facilitar el cruce con la base del INE.
+    \item \textbf{Estandarización geoespacial:} al igual que en el resto del proyecto, las geometrías se trabajaron en WGS84 (\texttt{EPSG:4326}) y se proyectaron a UTM 21S (\texttt{EPSG:32721}) cuando se requirieron mediciones en metros (distancias a paradas y a ejes viales).
+\end{itemize}
+
+La capa resultante de centros educativos se integra al análisis como un conjunto adicional de \emph{puntos de interés}, utilizado para caracterizar áreas generadoras de viajes frecuentes (por ejemplo, desplazamientos diarios de estudiantes y personal docente).  En la aplicación del módulo de optimización, la proximidad de cada parada candidata a centros educativos de ANEP se incorpora dentro del criterio de demanda y accesibilidad territorial, complementando la información de población por localidad.
+
+\subsection{Imágenes satelitales y servicios complementarios}
+
+Las imágenes satelitales constituyen la base visual sobre la cual se entrenaron los modelos de detección y segmentación. Se generaron a partir de servicios cartográficos públicos tipo \textit{Static Maps}, configurados para obtener recortes homogéneos centrados en las coordenadas de las paradas oficiales provistas por el MTOP.  
+
+El procedimiento se instrumentó en Google Colab (\cite{colab}), utilizando rutinas en Python que iteran sobre las coordenadas y descargan imágenes con parámetros estandarizados (\texttt{zoom = 20}, \texttt{640$\times$640 píxeles}, \texttt{maptype = "satellite"}). Las imágenes se almacenaron en el repositorio del proyecto con una convención de nombres trazable (\texttt{parada\_\{id\}\_zoom\_20.png}). Estas imágenes constituyen el insumo base para el entrenamiento de los modelos de detección de paradas y de segmentación de rutas, implementados posteriormente en la plataforma Roboflow (\cite{roboflow2024}).
+
+\section{Estructura base y entorno de trabajo}
+
+Como base operativa, se montó el repositorio de datos en \textbf{Google Drive} (cuenta de Ana Araujo), que formará parte del entregable de la tesis.  En adelante, se omiten rutas absolutas y se asume que todas las entradas y salidas empleadas por las notebooks de \textbf{Google Colab} residen en dicha estructura.  Este esquema garantiza la trazabilidad entre fuentes, modelos y resultados, facilitando la reproducción de los procesos y la organización general del proyecto.
+
+\section{Construcción de la base demográfica georreferenciable}
+
+El primer componente metodológico consistió en construir una base demográfica georreferenciable que permitiera estimar la población servida por cada parada potencial. Para ello se procesaron los microdatos del \emph{Instituto Nacional de Estadística (INE)}, generando una tabla de población por localidad complementada con coordenadas geográficas y nomenclaturas estandarizadas.
+
+\subsection{Población por localidad a partir de microdatos del INE}
+
+Se consolidó una base geolocalizada de población por localidad a partir de los microdatos del INE (\texttt{personas.csv}). El archivo se cargó con la biblioteca \texttt{pandas}, realizando una exploración inicial del esquema con énfasis en los campos \texttt{departamento} y \texttt{localidad}, que constituyen la clave territorial para la agregación.  
+
+Con el fin de construir un identificador único por localidad, se definió un procedimiento de normalización que aplica relleno con ceros a la izquierda en los códigos cuando corresponde.  Se implementaron funciones para asegurar que \texttt{DEPARTAMENTO} tenga dos dígitos y que \texttt{LOCALIDAD} mantenga la longitud prevista, concatenando luego ambos para formar \texttt{LOCALIDAD\_CODE}. Esta estandarización evita ambigüedades y permite el cruce consistente entre fuentes.
+
+Una vez garantizada la consistencia de claves, se estimó la población por localidad como el conteo de personas residentes en \texttt{personas.csv}.  Para ello se realizó una agregación con \texttt{groupby} sobre \texttt{LOCALIDAD\_CODE} (acompañada del código de departamento a modo de control) y se calculó el tamaño del grupo. El resultado es una tabla de localidades con su población asociada, ordenada de mayor a menor para facilitar la inspección y la validación manual.
+
+\subsection{Enriquecimiento con diccionarios oficiales}
+
+La tabla agregada se enriqueció mediante dos diccionarios oficiales del INE.  
+Primero, se unió el \textit{Diccionario de Localidades} (\texttt{Localidades\_diccionario.xlsx}), que aporta el código \texttt{DPTOLOC\_COD} y las denominaciones normalizadas de localidad.  
+Segundo, se incorporó el \textit{Diccionario de Departamentos} (\texttt{Departamentos\_diccionario.xlsx}), que incluye el código \texttt{DPTO\_CODIGO} y el nombre del departamento.  
+
+Antes de ambas uniones se homogenizaron los tipos de datos de las claves para evitar conversiones implícitas y asegurar un \texttt{merge} exacto.  El resultado consolidado se almacenó como \texttt{merged\_localidades.csv} dentro del repositorio del proyecto, con columnas de código y denominación estandarizadas.
+
+\subsection{Geocodificación de localidades}
+
+Con el fin de obtener las coordenadas de las localidades de la tabla de referencia, se preparó un flujo de geocodificación automatizado.  Se definió una función de apoyo con \texttt{geopy.Nominatim} (servicio de OpenStreetMap) para resolver pares \((\text{localidad}, \text{departamento}, \text{Uruguay})\) a latitud y longitud, incluyendo una pausa de un segundo entre consultas para respetar las políticas de uso y el límite de tasa del proveedor.  
+
+Este módulo quedó documentado y listo para activarse cuando se cierre la lista de localidades sin coordenadas confiables, dejando como salida un conjunto de puntos con coordenadas geográficas precisas (\texttt{EPSG:4326}). Esta base constituye el insumo principal para el análisis espacial posterior y para la estimación indirecta de demanda de transporte por zona de influencia.
+
+\section{Integración de la red vial nacional}
+
+Con el objetivo de contextualizar territorialmente las localidades, habilitar análisis posteriores de accesibilidad y definir los puntos desde los cuales se obtendrán las imágenes satelitales, se integró la red vial nacional provista por el \emph{Ministerio de Transporte y Obras Públicas} (MTOP).  
+
+Esta capa constituye la referencia espacial principal del proyecto, ya que permite tanto vincular las localidades y los centros educativos con las rutas nacionales como generar los puntos de muestreo utilizados para la descarga de imágenes y el posterior entrenamiento de los modelos de detección.
+
+\subsection{Carga y verificación de la capa vial del MTOP}
+
+Se cargó el shapefile \texttt{v\_camineria\_nacional.shp} utilizando la biblioteca \texttt{GeoPandas}. En primer lugar, se verificó el sistema de referencia de coordenadas (CRS) reportado por la capa y se reproyectó a WGS84 (\texttt{EPSG:4326}) cuando fue necesario, garantizando compatibilidad con el resto de las fuentes empleadas.  Posteriormente, se realizó una depuración inicial para aislar los tramos de jurisdicción nacional, eliminando ramales secundarios o duplicados.
+
+Para corroborar la integridad geométrica y la cobertura general, se generó una visualización exploratoria mediante \texttt{Matplotlib}, representando la red nacional sobre la totalidad de la caminería disponible (figura \ref{fig:red_vial}).  Esta verificación permitió confirmar la coherencia topológica y la continuidad del eje vial principal.
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{red_vial.png}
+    \caption{Red vial dada por \texttt{v\_camineria\_nacional.shp} }
+    \label{fig:red_vial}
+\end{figure}
+\subsection{Vinculación con localidades}
+
+Una vez operativa la red vial, se vinculó con la base demográfica georreferenciada construida a partir de los datos del INE.  Mediante operaciones espaciales con \texttt{GeoPandas} y \texttt{Shapely}, se calcularon las distancias entre cada localidad y el eje de la carretera más cercana, lo que permitió caracterizar la conectividad territorial y definir zonas de influencia en torno a los principales corredores nacionales. Esta integración estableció las bases para los análisis posteriores de accesibilidad y planificación de paradas, asegurando que las variables demográficas y viales pudieran combinarse bajo un mismo marco espacial y de referencia.
+
+
+\section{Integración de paradas oficiales y generación de imágenes}
+
+Una vez integradas las capas demográfica y vial, el siguiente paso consistió en incorporar la información operativa del \emph{Ministerio de Transporte y Obras Públicas} (MTOP) sobre las paradas de transporte público en rutas nacionales.  Esta capa constituye un insumo clave del proyecto, ya que proporciona ubicaciones oficiales verificadas y permite generar los recortes satelitales necesarios para el entrenamiento de los modelos de visión por computadora. Lo anterior esta ilustrado en la figura \ref{fig:paradas_MTOP}.
+
+\subsection{Capa de paradas del MTOP}
+
+Se utilizó la capa oficial de paradas provista por el MTOP, la cual fue cargada mediante \texttt{GeoPandas} e inspeccionada para verificar su estructura de atributos y su sistema de referencia de coordenadas. Las geometrías fueron reproyectadas a WGS84 (\texttt{EPSG:4326}) para asegurar compatibilidad con las demás capas del proyecto.  A partir de las geometrías puntuales se extrajeron las coordenadas de latitud y longitud, conformando un listado de ubicaciones que funcionó como referencia geográfica para la obtención de imágenes satelitales y para las etapas de detección posteriores.
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{paradas_MTOP.png}
+    \caption{Datos oficiales de paradas (MTOP) y localidades (INE)}
+    \label{fig:paradas_MTOP}
+\end{figure}
+\subsection{Capa de paradas derivada de OpenStreetMap}
+
+Además de la capa oficial del MTOP, se generó una segunda capa independiente utilizando datos abiertos de OpenStreetMap (OSM). Para ello se empleó la herramienta \texttt{Overpass Turbo}, que permite extraer entidades geográficas directamente desde la base global de OSM mediante consultas declarativas.
+
+La capa fue obtenida ejecutando la siguiente consulta en lenguaje Overpass QL:
+
+\begin{verbatim}
+[out:json][timeout:60];
+area["ISO3166-1"="UY"][admin_level=2];
+node(area)["highway"="bus_stop"];
+out body;
+;
+out skel qt;
+\end{verbatim}
+
+La consulta selecciona las entidades puntuales etiquetadas como \textit{highway=bus\_stop} dentro del territorio de Uruguay. El resultado se exportó en formato GeoJSON y posteriormente se cargó en \texttt{GeoPandas} para su procesamiento.
+
+Al igual que con la capa del MTOP, las geometrías fueron inspeccionadas para verificar consistencia en atributos y sistema de referencia. Se reproyectaron a WGS84 (\texttt{EPSG:4326}), garantizando compatibilidad con las demás capas del proyecto. A partir de los nodos resultantes se extrajeron coordenadas de latitud y longitud que funcionaron como segundo conjunto de ubicaciones de referencia para la obtención de imágenes satelitales, la comparación entre fuentes y las etapas de detección posteriores. Lo anterior esta en la figura \ref{fig:paradas_OT}.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{paradas_OT.png}
+    \caption{Datos de paradas (OSM) y localidades (INE)}
+    \label{fig:paradas_OT}
+\end{figure}
+
+\subsection{Generación de imágenes satelitales para entrenamiento}
+
+Sobre las coordenadas de la capa de paradas se construyó un conjunto de imágenes satelitales centradas en cada punto, con el fin de generar el material de entrenamiento inicial para el modelo de detección. Este proceso se instrumentó en \textbf{Google Colab} mediante una rutina en Python que itera sobre las coordenadas y consulta un servicio tipo \emph{Static Maps}, con parámetros homogéneos de configuración (en nuestro caso, \texttt{zoom = 20} y tamaño \texttt{640 $\times$ 640 píxeles}).  De esta forma se garantiza una escala constante y una cobertura visual comparable entre imágenes.  
+
+Las imágenes se almacenaron en el repositorio de Drive del proyecto siguiendo una convención de nombres estable —por ejemplo, \texttt{parada\_\{id\}\_zoom\_20.png}— para mantener la trazabilidad entre la entidad original y su recorte satelital.   
+
+El conjunto final se empaquetó y quedó listo para su carga y etiquetado en la plataforma \textbf{Roboflow}, donde se realizarían los primeros entrenamientos del modelo de detección.
+
+\subsection{Validación visual integrada}
+
+Como paso de control, se realizó una validación visual integrada para corroborar la coherencia espacial de las capas y facilitar la interpretación territorial. Mediante \texttt{GeoPandas} y \texttt{Matplotlib} se superpusieron, en un mismo mapa, las paradas oficiales del MTOP, las localidades derivadas del INE, la red vial nacional y los centros educativos de ANEP. Esta cartografía de control permitió confirmar que la distribución de paradas guarda relación con los principales asentamientos poblacionales, los centros educativos y los ejes de transporte, además de revelar zonas con baja cobertura o concentraciones excesivas.
+
+Con esta etapa se obtuvo: 
+\begin{enumerate}
+    \item un listado depurado de paradas oficiales con respaldo institucional, 
+    \item un lote estandarizado de imágenes satelitales asociadas a cada parada, y  
+    \item   una validación espacial que garantiza la consistencia territorial del conjunto.  
+\end{enumerate}
+
+Estos elementos constituyen la base operativa sobre la cual se desarrollan los modelos de detección y segmentación presentados en las secciones siguientes.
+
+\section{Modelos de visión por computadora}
+
+Para abordar la identificación automática de paradas y el reconocimiento de tramos de ruta, se incorporaron técnicas de \emph{Visión por Computadora (Computer Vision, CV)} entrenadas sobre imágenes satelitales. El objetivo de esta etapa metodológica fue construir modelos capaces de detectar estructuras asociadas a paradas y de segmentar la traza vial, de forma tal que ambos procesos pudieran integrarse en un mismo flujo de análisis territorial.
+
+\subsection{Uso de Roboflow como plataforma de entrenamiento}\label{seccion: Roboflow}
+
+El entrenamiento de los modelos se realizó en la plataforma \textbf{Roboflow}, que ofrece un entorno en línea para la gestión de datasets, etiquetado colaborativo y despliegue de modelos de detección y segmentación. Esta herramienta permitió automatizar gran parte del ciclo de desarrollo, incluyendo la creación de versiones sucesivas del conjunto de imágenes, la configuración de arquitecturas preentrenadas y la ejecución de inferencias de prueba.  
+
+Cada modelo entrenado quedó almacenado en el espacio de trabajo del proyecto, vinculado a las versiones de datos empleadas y accesible mediante el \texttt{Roboflow SDK} desde las notebooks de Google Colab. El uso de esta plataforma facilitó la trazabilidad entre datasets, modelos y resultados, y redujo la complejidad de la etapa de experimentación.
+
+\subsection{Modelos aplicados: detección de paradas y segmentación de rutas}
+
+Se trabajó con dos líneas complementarias de modelos:
+\begin{itemize}
+    \item \textbf{Detección de paradas.} Modelo orientado a identificar la presencia de estructuras asociadas a paradas de transporte público (refugios, carteles, bahías) en las imágenes satelitales.  
+    \item \textbf{Segmentación de rutas.} Modelo de segmentación semántica utilizado para delimitar la traza vial y descartar falsos positivos dentro de la calzada o zonas de tránsito vehicular.
+\end{itemize}
+
+Ambos modelos fueron entrenados de manera independiente, pero integrados posteriormente en un mismo flujo de inferencia, donde la detección de paradas se valida en función de su posición relativa respecto a la ruta segmentada.  
+Esta combinación permitió reducir falsos positivos y aumentar la precisión global del sistema.
+
+\subsection{Flujo general de entrenamiento e inferencia}
+
+El flujo metodológico general se estructuró en tres etapas:
+\begin{enumerate}
+    \item \textbf{Entrenamiento.} Preparación y etiquetado del conjunto de imágenes, configuración de la arquitectura seleccionada y entrenamiento supervisado en Roboflow.  
+    \item \textbf{Evaluación.} Descarga de resultados de validación, análisis de métricas básicas y selección del modelo con mejor desempeño para pruebas sobre conjuntos externos.  
+    \item \textbf{Inferencia.} Ejecución del modelo desde Google Colab mediante el \texttt{Roboflow SDK}, procesando imágenes nuevas y clasificando los resultados en categorías operativas (detecciones válidas, no válidas, o en revisión).
+\end{enumerate}
+
+Este flujo define la base metodológica del sistema de visión por computadora, sobre la cual se implementan posteriormente los procedimientos de verificación multimodal y optimización espacial.
+
+\section{Modelo multimodal de verificación} \label{seccion: Multimodal}
+
+Con el propósito de mejorar la precisión del sistema y reducir la cantidad de falsos positivos detectados por los modelos de visión por computadora, se incorporó una etapa de \textbf{verificación multimodal} basada en modelos de \emph{visión y lenguaje} (\emph{Vision–Language Models, VLMs}). Estos modelos permiten combinar la interpretación visual con el razonamiento textual, posibilitando una verificación contextual de las detecciones generadas por el sistema principal.
+
+\subsection{Motivación del uso de modelos multimodales}
+
+Durante las pruebas iniciales, los modelos de detección tendieron a confundir ciertos objetos con paradas, en particular techos rectangulares, cabinas de camión y zonas pavimentadas con sombras o parches.  
+El objetivo del módulo multimodal fue incorporar una capa de verificación capaz de razonar sobre el contenido visual más allá de la forma geométrica, aprendiendo criterios conceptuales como:  
+\begin{itemize}
+    \item “Todo lo que se encuentra sobre la calzada no corresponde a una parada.”  
+    \item “Una parada debe encontrarse próxima al borde de la ruta o en una zona de detención.”  
+    \item “Las estructuras de parada suelen incluir refugios, carteles o áreas despejadas de acceso.”  
+\end{itemize}
+
+De esta manera, la verificación multimodal actúa como un filtro inteligente que refina la salida del modelo de detección sin requerir reentrenamientos extensos.
+
+\subsection{Herramienta y entorno de ejecución}
+
+La verificación se implementó mediante un modelo de gran escala de visión–lenguaje (\emph{Vision–Language Model, VLM}), ejecutado de forma remota desde las notebooks de \textbf{Google Colab}.  
+
+Inicialmente se realizaron pruebas conceptuales con el modelo \textbf{Qwen2.5-VL-32B-Instruct} \cite{Qwen2.5-VL}, a fin de validar la viabilidad del enfoque multimodal en el contexto de imágenes satelitales.  Posteriormente, se adoptó el modelo \textbf{GLM-4.5V} \cite{vteam2025glm45vglm41vthinkingversatilemultimodal}, accedido a través de la \textbf{Zai SDK}, por ofrecer una mejor estabilidad en la conexión y una latencia más baja en inferencia masiva.
+
+La comunicación con el modelo se efectuó mediante una API compatible con la arquitectura de \texttt{OpenAI}, lo que permitió invocar los modelos directamente desde Python y automatizar el flujo de verificación. Cada imagen clasificada como detección potencial se envía al modelo junto con una instrucción breve en lenguaje natural, y la respuesta se interpreta como veredicto de validación (“correcta” o “incorrecta”).  
+
+Este esquema permitió procesar de manera eficiente grandes volúmenes de imágenes, priorizando para revisión humana únicamente los casos ambiguos o de baja confianza.  Así, el módulo multimodal se integra funcionalmente al flujo principal de visión por computadora, mejorando la calidad final de las detecciones sin añadir complejidad significativa al pipeline.
+
+\subsection{Rol dentro del flujo metodológico}
+
+El sistema multimodal de verificación opera como una etapa intermedia entre la detección y la selección final de paradas, consolidando un esquema de control de calidad automatizado.  
+Su incorporación aporta tres beneficios principales:
+\begin{enumerate}
+    \item \textbf{Reducción de falsos positivos:} identifica y descarta detecciones erróneas sin necesidad de reentrenar el modelo.  
+    \item \textbf{Estandarización de criterios:} aplica reglas conceptuales de accesibilidad y localización coherentes con el dominio del transporte.  
+    \item \textbf{Optimización del tiempo de revisión:} permite concentrar la validación humana en casos ambiguos o de baja confianza.
+\end{enumerate}
+
+\section{Módulo de optimización}
+
+El último componente metodológico del sistema corresponde al \textbf{módulo de optimización de paradas}, encargado de evaluar y priorizar las ubicaciones candidatas resultantes del proceso de detección y verificación. Este módulo integra información demográfica, geoespacial y operativa para definir una red de paradas óptima en función de criterios de cobertura y accesibilidad.
+
+La formulación del problema parte de la necesidad de equilibrar dos dimensiones clave:  
+\begin{enumerate}
+    \item  la \textit{demanda potencial de transporte}, representada por la población de las localidades cercanas y por la presencia de centros educativos en el entorno de la ruta,
+    \item la \textit{distribución espacial de las paradas}, que debe garantizar conectividad adecuada sin redundancias excesivas.  
+\end{enumerate}
+
+Para resolver este problema, se adoptó un enfoque basado en \textbf{análisis espacial y evaluación multicriterio}, tomando como referencia los lineamientos del trabajo de \cite{yu2024optimization}. El modelo combina técnicas de agrupamiento y ponderación jerárquica, ajustadas al contexto interurbano de las rutas nacionales del Uruguay.
+
+\subsection{Metodología de evaluación multicriterio (AHP)}
+
+El componente central del módulo de optimización se basa en el \textbf{Proceso Analítico Jerárquico (AHP, Analytic Hierarchy Process)}, una metodología ampliamente utilizada para la toma de decisiones con múltiples criterios. AHP permite descomponer un problema complejo en una jerarquía de criterios, establecer comparaciones por pares y derivar pesos relativos que reflejan la importancia de cada dimensión.
+
+En este proyecto, el AHP se aplicó para integrar tres criterios principales:
+\begin{itemize}
+    \item \textbf{Cobertura poblacional, vial y educativa:} representada por la población de la localidad más cercana, dentro de un radio de influencia determinado, complementada por la proximidad a centros educativos de ANEP (número y distancia de escuelas en el entorno de cada parada candidata) y cantidad de cruces de caminos detectados con la información del MTOP.
+    \item \textbf{Espaciado vial:} distancia entre paradas adyacentes sobre el eje de la ruta, que refleja equilibrio entre accesibilidad y eficiencia operativa.  
+    \item \textbf{Accesibilidad local:} distancia media entre cada parada candidata y el centroide de la localidad más cercana.
+\end{itemize}
+
+Cada criterio se normaliza en una escala común y se pondera según su importancia relativa dentro del sistema. Los pesos se obtienen a partir de una matriz de comparaciones por pares, que mide la preferencia de un criterio sobre otro según la escala de Saaty (1–9) \cite{Saaty1980}. A partir de esa matriz se calcula el vector de prioridades mediante el autovector principal, verificando la consistencia interna del juicio ($CR < 0.10$).  
+
+El resultado del AHP es un \emph{índice compuesto} que asigna a cada parada candidata una puntuación única, combinando los tres criterios bajo una misma métrica. Este índice permite ordenar las paradas según su relevancia territorial y seleccionar aquellas que maximizan la cobertura poblacional y educativa sin comprometer la distancia ni la accesibilidad.
+
+\subsection{Etapas generales del módulo}
+
+En términos metodológicos, el módulo de optimización se estructura en tres etapas principales:
+\begin{enumerate}
+    \item \textbf{Integración de variables:} combinación de indicadores de población, proximidad a centros educativos, distancia y espaciado obtenidos a partir de las bases geoespaciales del INE, MTOP y ANEP.  
+    \item \textbf{Evaluación de criterios:} aplicación del modelo AHP para determinar pesos relativos y calcular un índice compuesto de prioridad. 
+    \item \textbf{Selección espacial:} filtrado de redundancias mediante la aplicación de una distancia mínima operativa de 3 km entre paradas consecutivas, garantizando una cobertura equilibrada y la eliminación de solapamientos en la red resultante.
+\end{enumerate}
+
+Este componente constituye la transición entre la detección visual y el análisis operativo del sistema, cerrando el pipeline metodológico con una propuesta cuantitativa de priorización de paradas que será detallada en posteriores capítulos.
+
+\section{Cierre del capítulo de metodología}
+
+La metodología desarrollada integra en un único flujo operativo los componentes de análisis geoespacial, visión por computadora y evaluación multicriterio, con el propósito de construir un sistema reproducible y escalable para la gestión de paradas en rutas nacionales. El proceso comenzó con la consolidación de fuentes oficiales —microdatos del INE, capas geográficas del MTOP y centros educativos de ANEP— que permitieron generar una base demográfica georreferenciable y contextualizarla sobre la red vial nacional.  A partir de estas capas se derivaron las coordenadas empleadas para la descarga de imágenes satelitales, insumo fundamental para el entrenamiento de los modelos de detección y segmentación implementados en Roboflow.
+
+Los modelos de visión por computadora permitieron identificar automáticamente estructuras compatibles con paradas y delimitar la traza vial, reduciendo la dependencia de relevamientos manuales. Sobre esta base se incorporó un módulo de verificación multimodal, capaz de combinar información visual y textual para descartar falsos positivos y aplicar criterios básicos de accesibilidad. 
+
+Finalmente, el sistema se completó con un módulo de optimización basado en el Proceso Analítico Jerárquico (AHP), que integra variables demográficas, educativas y espaciales para priorizar las paradas más relevantes desde el punto de vista operativo y territorial.En conjunto, la metodología conforma un \textbf{pipeline integral y reproducible}, que permite pasar desde datos abiertos y observaciones satelitales hasta una red de paradas jerarquizada y validada.  
+
+En siguientes capítulos se detalla el desarrollo técnico de cada módulo, las pruebas realizadas y los resultados obtenidos en las rutas seleccionadas.

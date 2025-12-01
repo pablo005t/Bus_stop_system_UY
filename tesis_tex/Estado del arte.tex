@@ -1,0 +1,525 @@
+\chapter{Estado del arte}
+\section{GIS y Scoring}
+En esta sección, revisaremos la bibliografía sobre sistemas de información geográfica (GIS, por sus siglas en ingles, geographical information system) y como distribuir paradas de ómnibus usando métricas que cuantifican cuan bueno es el sistema de paradas y algoritmos para optimizar el sistema de acuerdo con dichas métricas. 
+\subsection{Introducción a GIS}
+Los sistemas de información geográfica (GIS, \emph{Geographical Information Systems}) permiten capturar, almacenar, analizar y visualizar datos espaciales. Su uso en transporte facilita la superposición de capas —vías, puntos de interés (POI), densidad poblacional, pendientes o cobertura de servicios— para evaluar la accesibilidad y la eficiencia de la red.  
+El análisis espacial aplicado al transporte público suele incluir:  
+\begin{itemize}
+  \item \textbf{Análisis de proximidad}, para medir distancias entre usuarios potenciales y paradas.  
+  \item \textbf{Análisis de red}, que permite calcular distancias reales sobre la red vial, en contraste con las euclidianas.  
+  \item \textbf{Análisis de densidad o puntos calientes}, útil para identificar concentraciones de demanda.  
+\end{itemize}
+
+La integración de GIS con bases de datos masivas, como registros de telefonía o POI urbanos, habilita enfoques de planificación basados en evidencia más que en criterios empíricos o subjetivos \cite{yu2024optimization}. De esta forma, la ubicación de paradas puede optimizarse cuantificando cobertura, accesibilidad y redundancia, en lugar de depender de juicios expertos o patrones históricos.
+
+
+En el ámbito del transporte, los GIS se han consolidado como herramientas centrales para planificar redes y evaluar accesibilidad \cite{Thill2000},  \cite{MillerShaw2001}, \cite{ Borruso2003}. Su integración con datos socioeconómicos, de movilidad y de infraestructura permite modelar cobertura, demanda y eficiencia \cite{Xie2008, Wang2015}.  El uso de GIS en la localización de paradas de ómnibus posibilita analizar la distribución espacial de usuarios y puntos de interés, identificar zonas no cubiertas y apoyar decisiones basadas en métricas cuantitativas \cite{Church1993, Gutiérrez2011}.
+
+
+\subsection{Proceso de análisis jerárquico (AHP)}
+Los métodos de decisión multicriterio (MCDM) permiten evaluar alternativas cuando intervienen criterios múltiples y heterogéneos. Entre los más usados en transporte y urbanismo están AHP, TOPSIS y PROMETHEE. Aquí adoptaremos AHP y no profundizaremos en los otros.
+
+
+El AHP, introducido por \cite{Saaty1980}, propone una forma sistemática de abordar decisiones donde intervienen múltiples factores cuantitativos y cualitativos. La idea central es estructurar el problema de decisión en tres niveles jerárquicos: 
+\begin{enumerate}
+    \item el objetivo general,
+    \item los criterios o subcriterios de evaluación,
+    \item las alternativas posibles.  
+\end{enumerate}
+    
+Cada criterio se compara con los demás de manera \emph{par a par}, expresando su importancia relativa mediante la escala fundamental de Saaty:
+\[
+1\ (\text{igual importancia}),\ 3\ (\text{moderada}),\ 5\ (\text{fuerte}),\ 7\ (\text{muy fuerte}),\ 9\ (\text{extrema})\]
+utilizando los recíprocos para la relación inversa.  
+Estas comparaciones forman una matriz $A=(a_{ij})$ con $a_{ij}>0$, $a_{ji}=1/a_{ij}$ y $a_{ii}=1$.
+
+A partir de $A$, se calcula un vector de pesos $\mathbf{w}$ que refleja la prioridad de cada criterio. Dicho vector se obtiene como el autovector principal normalizado:
+\[
+A\mathbf{w}=\lambda_{\max}\mathbf{w}, \qquad \sum_i w_i=1.
+\]
+Para verificar la coherencia de los juicios, se usa el índice de consistencia:
+\[
+\mathrm{CI}=\frac{\lambda_{\max}-n}{n-1}, \qquad 
+\mathrm{CR}=\frac{\mathrm{CI}}{\mathrm{RI}},
+\]
+donde $\mathrm{RI}$ es el índice aleatorio tabulado (e.g. $\mathrm{RI}_3=0.58$, $\mathrm{RI}_4=0.90$).  
+Valores $\mathrm{CR}\leq 0.10$ indican una consistencia aceptable \cite{FormanGass2001}.
+
+El puntaje final de cada alternativa se obtiene combinando los valores normalizados $S_i$ de cada criterio con sus pesos:
+\[
+P = \sum_{i=1}^{n} w_i\, S_i.
+\]
+De este modo, AHP permite integrar información cuantitativa y juicios expertos bajo un esquema reproducible y transparente.
+
+En el contexto del diseño de paradas de ómnibus, el método se utiliza para ponderar indicadores como la cobertura de puntos de interés (POI), la distancia entre paradas y la accesibilidad local.  Por ejemplo, \cite{yu2024optimization} aplica AHP para asignar pesos a estos tres criterios y comparar un sistema optimizado con el existente, demostrando que el método mejora la evaluación global del diseño propuesto.
+
+
+\subsection{Scoring}
+En la bibliografía revisada para este trabajo hemos encontrado distintas maneras de cuantificar la calidad del sistema de paradas, aquí expondremos las ideas claves de algunos trabajos que serán los que adaptaremos a nuestro caso.
+\subsubsection{Mean shift}
+Dado $x\in \mathbb{R}^2$ definimos 
+
+\begin{equation}\label{mean shift eq}
+    m(x) = \frac{\sum_{s\in S} K(s-x)s}{\sum_{s\in S} K(s-x)}
+\end{equation} 
+donde $S$ es un conjunto de puntos (en nuestro caso, los candidatos a paradas) y siendo $K(x) = e^{-c\|x\|^2}$ (puede cambiarse por un kernel mas adecuado).
+
+Definimos por $mean\,shift(x) := \|m(x)-x\|$. Esta es la métrica elegida y minimizada en \cite{supangat2017bus}. En dicho trabajo usan un ancho de banda de 500 metros, el cual es revisado a posteriori. Utilizando técnicas de GIS superan el problema de que las distancias dadas por la métrica euclidiana no necesariamente (casi nunca) serán las distancias que necesita recorrer el usuario para llegar desde su casa a la parada; para calcular estas distancias, utilizan la API de Google Maps.  
+
+Si el lector quiere profundizar en algoritmo de mean shift, revisar \cite{cheng1995mean}.\\
+
+
+\subsubsection{K-means}\label{sec:yu_descripcion}
+En \cite{yu2024optimization} estudian el caso de la ciudad de Hohhot en Mongolia, utilizando una base de datos telefónica que se compone por ID, timestamp y ubicación dada por longitud y latitud. Para cada usuario (identificado por un único ID) su ubicación es guardada solo una vez al día en una misma área, evitando que un mismo usuario sea identificado por dos antenas. 
+
+La idea central es determinar $K$ clusters utilizando el algoritmo $K-$means, donde cada cluster corresponde a una parada de ómnibus. En dicho trabajo determinan $K$ usando el método del codo.
+Recordemos que se puede graficar la siguiente métrica
+\begin{equation}\label{elbow}
+    SSE = \sum^k_{i=1}\sum_{P\in C_i}\|p-m_i\|^2
+\end{equation}
+donde $k$ es la cantidad de clusters, $C_i$ es el $i-$ésimo cluster, y $m_i$ es el centroide de $C_i$. El $SSE$ cuantifica qué tan "parecidos" son los miembros de cada cluster a su centroide correspondiente, el método del codo da un criterio para elegir un $K$ óptimo en algún sentido. Si aumentamos $K$ lo suficiente, de hecho si usamos $K=n$, podemos conseguir $SSE=0$, sin embargo, esto no tiene sentido, tendríamos un cluster por cada dato. El método del codo elige el primer $K$ para el cual el $SSE$ deja de mejorar al ritmo que lo venía haciendo. Un economista diría que a partir de cierto $K$, agregar clusters tiene una ganancia marginal decreciente en algún sentido. Observar figura \ref{elbow metodo}.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.7\linewidth]{Elbow method.png}
+    \caption{Método del codo\\ 
+    Imagen extraída de \cite{yu2024optimization}}
+    \label{elbow metodo}
+\end{figure}
+
+Una vez obtenidos los clusters (en dicho trabajo obtienen $K=263$), utilizan $WPDM$ (Weighted Path Distance Metric) para rankear las posibles paradas según su WPDM como el centroide del cluster mas cercano. El criterio usado por ellos es el siguiente, dados los candidatos a parada $B_1,...,B_q$, definimos $WDPM_j(B_i) = WDPM(C_j - B_i)$. 
+A cada $B_i$ le asignamos un vector de ranking 
+\[
+R_i = R(B_i) = \big( Rank_1(B_i), \, Rank_2(B_i), \dots, Rank_K(B_i)\big),
+\]
+con
+\[
+Rank_j(B_i) =
+\begin{cases}
+2, & \text{si $B_i$ es el candidato más cercano a $C_j$,} \\[6pt]
+1, & \text{si $B_i$ es el segundo más cercano a $C_j$,} \\[6pt]
+0.5, & \text{si $B_i$ es el tercero más cercano a $C_j$,} \\[6pt]
+0, & \text{en cualquier otro caso.}
+\end{cases}
+\]
+
+Finalmente, el puntaje total de cada parada se define como
+\[
+W(B_i) = \sum_{j=1}^K \omega_j \cdot Rank_j(B_i),
+\]
+donde $\omega_j = \frac{|C_j|}{\sum_{i=1}^k|C_i|}$ es el peso del cluster $C_j$.
+
+Ahora podemos ordenar $B_1,\cdots,B_q$ según $W(B_i)$. Usando las 100 paradas mejor calificadas, expanden dichas paradas en una distancia de $50$ metros (recordemos que este trabajo es en un ambiente urbano), y repiten el proceso. En esta expansión si la parada $B_1$ y $B_2$ tienen intersección en un radio de 50 metros esa nueva parada candidato se contabiliza una sola vez, por eso en \cite{yu2024optimization} expandiendo las $100$ mejores candidatas obtienen $234$ y no $300$. Ahora repiten el calculo de $W(B_i)$ para el nuevo conjunto de paradas y se quedan con las 100 mejores, eliminando ademas paradas que estén a menos de 100 metros. 
+
+Una vez obtenido el nuevo sistema de paradas se compara con el sistema existente teniendo en cuenta tres métricas:
+\begin{itemize}
+    \item numero de puntos de interés (POI) que tienen servicio de parada:
+    \begin{enumerate}
+        \item $0–10\mapsto 0.3$; 
+        \item $11–20\mapsto 0.6$; 
+        \item $21–30\mapsto 0.8$; 
+        \item $>30\mapsto 1$.
+    \end{enumerate}
+    \item Distancia entre paradas:
+    \begin{enumerate}
+        \item $0–100\mapsto  0.5$;
+        \item $101–500\mapsto 1$; 
+        \item $501–1000\mapsto 0.5$; 
+        \item $>1000\mapsto 0.2$.
+    \end{enumerate}
+    \item Distancia promedio entre la parada y los POI's a menos de $200$ metros:
+    \begin{enumerate}
+        \item $<100 m\mapsto 1$; 
+        \item $100–150 m\mapsto 0.7$; 
+        \item $>150 m\mapsto 0.5$.
+    \end{enumerate}
+\end{itemize}
+Para formar un score global teniendo en cuenta estás tres medidas se utiliza AHP. El método descrito anteriormente para crear un nuevo sistema de paradas tiene un mejor score que el sistema de paradas ya existentes en el caso de \cite{yu2024optimization}.
+
+\subsubsection{Algoritmo genético (GA) y optimización de partícula de Swarm (PSO)}
+En \cite{shatnawi2020optimization}, PSO y GA se montan sobre una geobase (GIS) y un modelo de tiempo de viaje $T(d,v,n)$ que descompone el recorrido en distancias entre paradas, velocidad media y número de detenciones ($T=\sum d_i/v + n\,t_{\text{det}}$). Calibran supuestos urbanos (400–600 m entre paradas, $t_{\text{det}}=2$ min, $v=40$ km/h). 
+
+
+Con esa base, el algoritmo PSO converge a un espaciado óptimo de $\approx 416$ m ($\approx 1200$ iteraciones) y reduce tiempos en corredores con paradas redundantes. Mientras que GA minimiza subrutas imponiendo grado 2 en cada parada y muestra mejoras similares. 
+
+
+La reubicación en red con GIS iguala distancias, evita intersecciones y descarta ubicaciones con pendiente $>6\%$; si una propuesta supera el umbral, se desplaza hasta cumplirlo (espaciado uniforme de 400 m). En calles deficitarias de paradas, el tiempo en vehículo aumenta pero la caminata cae (de $>2000$ m a $\sim 400$ m), explicitando el trade-off cobertura–tiempo.
+\\
+
+No es de interés para este trabajo explicar los algoritmos usados anteriormente. Si el lector esta interesado en profundizar en ellos las referencias son 
+\cite{holland1975}, \cite{kennedy1995pso}, \cite{goldberg1989}, \cite{clerc2002constriction}.
+
+\section{Computer Vision}
+En esta sección daremos un panorama general sobre el área de Computer Vision. Asumiremos que el lector tiene nociones básicas sobre deep learning. Por más información revisar \cite{goodfellow2016} (capítulos 1–8).\\
+
+\subsection{Introducción}
+Se puede decir que Computer Vision (CV) es el área de ciencia de datos que se especializa en la extracción de información a través de imágenes.
+Mientras que los humanos (y otros animales) tenemos una gran capacidad para extraer información a través de imágenes que son capturadas con nuestros ojos (entre 50 y 90 por segundo), el análisis de imágenes es una tarea mucho mas complicada para las computadoras.
+
+Ejemplifiquemos lo anterior, los seres humanos venimos identificando frutas maduras de inmaduras solo con nuestra visión hace miles de años. Por ejemplo, diferenciando entre bananas verdes y amarillas, recién en la década de los 90 se implementaron modelos de CV que tenían éxito en esta tarea en entornos controlados. Casi 20 años después en \cite{krizhevsky2012} se logra implementar un modelo que puede discriminar entre bananas verdes y amarillas, asi como otras frutas, en cualquier entorno de manera exitosa. 
+
+Una definición que puede parecer mas ambigua pero no por eso menos útil es la siguiente: ¨CV es el área que permite a las computadoras imitar la habilidad (animal) de interpretar lo que se ve¨.
+
+En la actualidad CV se ha convertido en una gran área de investigación en la academia y de aplicaciones tanto en la academia como en la industria.  Un ejemplo de CV aplicado en la academia es la automatización de la identificación de animales salvajes en cámaras trampas. Algunos ejemplos que ilustran lo anterior son 
+\begin{itemize}
+    \item \cite{Bothmann2023EcolInf};
+    \item \cite{Ahumada2020EnvCons};
+    \item \cite{Schneider2019MEE};
+    \item  \cite{Tabak2019MEE};
+    \item \cite{Norouzzadeh2018PNAS}.
+\end{itemize}
+
+Hay una gran variedad de ejemplos en la industria, desde conteo de vehículos por cámara en puntos de ruta hasta identificación de enfermedades mediante fotografías o radioimagenes. En el siguiente link se encuentran muchas aplicaciones por si el lector esta interesado en profundizar : \href{https://www.cs.ubc.ca/~lowe/vision.html}{Computer Vision resources de David Lowe}.
+
+Las tareas fundamentales de CV se agrupan en cuatro categorías:
+
+\begin{itemize}
+\item \textbf{Detección:} localizar y clasificar objetos dentro de una imagen, por ejemplo, detectar autos o peatones en una vía. Modelos como YOLO o Faster R-CNN son los más representativos.
+\item \textbf{Segmentación:} asignar una etiqueta a cada píxel, dividiendo la imagen en regiones coherentes (por ejemplo, separar calzada, acera y vegetación). Ejemplos: U-Net, DeepLab.
+\item \textbf{Reconocimiento:} identificar qué objeto o categoría está presente en una imagen completa, como clasificar tipos de frutas o señales de tránsito.
+\item \textbf{Seguimiento:} asociar detecciones de un mismo objeto a lo largo del tiempo en un video, como el seguimiento de vehículos o animales.
+\end{itemize}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{computervision_tipos.png}
+    \caption{Tareas de computer vision}
+    \label{fig:placeholder}
+\end{figure}
+
+\subsubsection{Métricas de evaluación}
+
+El desempeño de los modelos de visión por computadora se evalúa mediante indicadores cuantitativos estandarizados que permiten comparar modelos de forma objetiva. A continuación se describen los más utilizados:
+
+\begin{itemize}
+    \item \textbf{Accuracy:}
+    \[
+    \text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}
+    \]
+    donde $TP$ y $TN$ representan los verdaderos positivos y negativos, y $FP$ y $FN$ los falsos positivos y negativos. 
+    Mide la proporción de predicciones correctas sobre el total de casos, siendo apropiada cuando las clases están balanceadas.
+
+    \item \textbf{Precision y Recall:}
+    \[
+    \text{Precision} = \frac{TP}{TP + FP}, \quad 
+    \text{Recall} = \frac{TP}{TP + FN}
+    \]
+    La precisión mide la pureza de las predicciones positivas (qué proporción de los objetos detectados son realmente correctos), mientras que el \textit{recall} evalúa la capacidad del modelo para encontrar todos los objetos de la clase de interés.
+
+    \item \textbf{F1-score:}
+    \[
+    F_1 = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}
+    \]
+    Es la media armónica entre precisión y recall. 
+    Resulta útil cuando las clases son desbalanceadas o cuando se desea un compromiso entre ambas métricas.
+
+    \item \textbf{Intersection over Union (IoU):}
+    \[
+    \text{IoU} = \frac{|A_{\text{pred}} \cap A_{\text{true}}|}{|A_{\text{pred}} \cup A_{\text{true}}|}
+    \]
+    donde $A_{\text{pred}}$ es el área predicha por el modelo y $A_{\text{true}}$ el área de referencia o verdad de terreno. 
+    Esta métrica mide la superposición entre la predicción y la referencia, y es estándar en tareas de detección y segmentación. 
+    Valores de IoU superiores a 0.5 suelen considerarse predicciones correctas.
+
+    \item \textbf{Mean Average Precision (mAP):}
+    En detección de objetos, se usa la \textit{precisión promedio} (AP) para cada clase:
+    \[
+    AP = \int_0^1 P(R)\, dR
+    \]
+    donde $P(R)$ es la curva de precisión en función del \textit{recall}.  
+    Luego se promedia sobre todas las clases:
+    \[
+    mAP = \frac{1}{N} \sum_{i=1}^N AP_i
+    \]
+    donde $N$ es el número de clases.  
+    Las variantes más comunes son $AP_{50}$ (IoU $\geq$ 0.5) y $AP_{75}$ (IoU $\geq$ 0.75), siguiendo la convención de COCO.
+\end{itemize}
+
+Estas métricas constituyen la base de evaluación en visión por computadora y serán empleadas en el análisis comparativo de los modelos de esta tesis.
+
+\subsection{De las Redes Convolucionales a los Modelos YOLO}
+\subsubsection{Redes Convolucionales (CNN)}
+
+Las \textit{redes neuronales convolucionales} (CNN, por sus siglas en inglés) constituyen la base del desarrollo moderno en visión por computadora. Fueron introducidas formalmente por \cite{lecun1998} y se inspiran en la organización jerárquica del córtex visual biológico: las primeras capas capturan bordes o texturas simples, mientras que las capas más profundas combinan estas representaciones para reconocer estructuras complejas.
+
+
+Una CNN está compuesta por tres tipos principales de capas:
+
+\begin{itemize}
+    \item \textbf{Capa convolucional:} aplica filtros o \textit{kernels} que se deslizan sobre la imagen, extrayendo características locales.  
+    Matemáticamente, si $I$ es la imagen y $K$ un kernel de tamaño $m\times n$, la convolución discreta se define como:
+    \[
+    S(i,j) = (I * K)(i,j) = \sum_{u=0}^{m-1}\sum_{v=0}^{n-1} I(i+u,j+v)K(u,v)
+    \]
+    donde $S(i,j)$ es el mapa de activaciones resultante.
+
+    \item \textbf{Capa de activación:} introduce no linealidad. La función más usada es ReLU (\textit{Rectified Linear Unit}):
+    \[
+    f(x) = \max(0, x)
+    \]
+    lo que permite acelerar la convergencia y evitar saturación del gradiente.
+
+    \item \textbf{Capa de agrupamiento (pooling):} reduce la resolución espacial manteniendo la información relevante.  
+    En el caso del \textit{max pooling}, se toma el valor máximo en una región $k\times k$.
+\end{itemize}
+
+Estas capas se apilan de forma jerárquica, seguidas por capas densas (\textit{fully connected}) que realizan la clasificación final.  El entrenamiento se realiza mediante \textit{backpropagation} minimizando una función de pérdida, típicamente la entropía cruzada.
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{LeNet.png}
+    \caption{Arquitectura de LeNet}
+    \label{fig:LeNet}
+\end{figure}
+
+
+\subsubsection{De LeNet a AlexNet}
+
+El modelo \textit{LeNet-5}  de \cite{lecun1998} fue el primer ejemplo exitoso de una CNN (figura \ref{fig:LeNet}), usado para reconocer dígitos manuscritos en el dataset MNIST.  Dos décadas más tarde, \cite{krizhevsky2012} presentó \textit{AlexNet}, marcando el inicio del \textit{deep learning} moderno.  
+Las innovaciones principales de AlexNet fueron:
+\begin{enumerate}
+    \item Entrenamiento en GPU, reduciendo el tiempo de entrenamiento de semanas a días.
+    \item Uso de \textit{dropout}, lo que aceleró el aprendizaje y evitó sobreajuste.
+    \item Aplicación de técnicas de \textit{data augmentation} (rotaciones, espejado, traslaciones) para mejorar la generalización.
+\end{enumerate}
+AlexNet redujo el error top-5 en el desafío ImageNet de 26\% a 15\%, demostrando que las CNN podían superar ampliamente los métodos clásicos de visión.
+
+\subsubsection{De la Clasificación a la Detección}
+
+Las CNN tradicionales clasifican imágenes completas, pero no indican \textit{dónde} se encuentra el objeto.  Para resolver este problema surge la familia de modelos basada en regiones, cuyo objetivo es detectar y clasificar simultáneamente.
+
+El primer enfoque ampliamente adoptado es \textbf{R-CNN} (\textit{Regions with CNN features}) \cite{girshick2014rcnn}.  Su idea consiste en dividir la imagen en cientos o miles de posibles “regiones de interés” mediante un algoritmo externo llamado \textit{Selective Search}.  Cada región se recorta, se redimensiona y se procesa individualmente por una CNN entrenada para reconocer objetos.  El método es preciso, pero computacionalmente costoso: procesar una sola imagen requiere que la red analice miles de regiones por separado.
+
+Luego aparece \textbf{Fast R-CNN} \cite{girshick2015fast}, que mejora este esquema evitando pasar cada recorte por la red.  En lugar de eso, la CNN procesa la imagen completa una sola vez y genera un mapa de características compartido.  Las regiones se proyectan sobre ese mapa, reduciendo el procesamiento redundante y acelerando la detección de manera significativa.
+
+Finalmente, \textbf{Faster R-CNN} \cite{ren2015faster} introduce una subred llamada \textit{Region Proposal Network} (RPN) que aprende automáticamente a proponer regiones probables donde puede haber objetos.  De esta forma, todo el sistema se convierte en un único modelo entrenable de extremo a extremo, mucho más rápido y eficiente.
+
+Estos desarrollos establecen las bases de los detectores modernos.  
+Aun así, los modelos basados en regiones mantienen una limitación en velocidad que dificulta su uso en aplicaciones en tiempo real, como cámaras de tráfico o monitoreo aéreo. Esa necesidad impulsa la creación de arquitecturas más ligeras y veloces, entre las que destaca la familia \textbf{YOLO}.
+
+\subsubsection{YOLO: You Only Look Once}
+
+La familia de modelos \textbf{YOLO} (You Only Look Once), introducida en \cite{redmon2016yolo}, supuso un cambio conceptual: transforma el problema en una única tarea de regresión.  
+En lugar de generar propuestas de regiones y procesarlas individualmente (como en Faster R-CNN), la red predice directamente las posiciones y clases de todos los objetos en una sola evaluación sobre la imagen completa.
+
+YOLO divide la imagen de entrada en una grilla de tamaño $S \times S$.  
+Cada celda de la grilla es responsable de detectar los objetos cuyo centro cae dentro de ella.  
+Para cada celda, la red predice:
+\begin{itemize}
+    \item $B$ cajas delimitadoras (con coordenadas normalizadas $(x, y, w, h)$),
+    \item una probabilidad de confianza $p_o$ asociada a cada caja, que indica la presencia de un objeto y la exactitud de la predicción,
+    \item y una distribución de probabilidades sobre las clases $p_1, p_2, \ldots, p_C$.
+\end{itemize}
+
+Así, la salida de cada celda se representa como:
+\[
+\mathbf{y}_{i} = [p_{o,1}, x_1, y_1, w_1, h_1, \ldots, p_{o,B}, x_B, y_B, w_B, h_B, p_1, p_2, \ldots, p_C]
+\]
+y la salida global del modelo tiene dimensión $S \times S \times (B \times 5 + C)$.
+
+YOLO utiliza una CNN como \textit{backbone} (originalmente Darknet-19) para extraer un mapa de características de la imagen.  
+A partir de este mapa, capas convolucionales adicionales predicen las coordenadas y probabilidades directamente, sin necesidad de capas densas.  De este modo, la red conserva la información espacial completa y mantiene eficiencia en memoria y velocidad.
+
+El entrenamiento se realiza minimizando una función de pérdida compuesta:
+\begin{align*}
+L =\;& 
+\lambda_{\text{coord}} 
+\sum_{i=1}^{S^2}\sum_{j=1}^{B} 
+\1_{ij}^{\mathrm{obj}}
+\Big[(x_i-\hat{x}_i)^2 + (y_i-\hat{y}_i)^2\Big] \\[4pt]
+&+ \lambda_{\text{coord}} 
+\sum_{i=1}^{S^2}\sum_{j=1}^{B} 
+\1_{ij}^{\mathrm{obj}}
+\Big[(\sqrt{w_i}-\sqrt{\hat{w}_i})^2 + (\sqrt{h_i}-\sqrt{\hat{h}_i})^2\Big] \\[4pt]
+&+ 
+\sum_{i=1}^{S^2}\sum_{j=1}^{B} 
+\1_{ij}^{\mathrm{obj}}(C_i-\hat{C}_i)^2 \\[4pt]
+&+ 
+\lambda_{\text{noobj}} 
+\sum_{i=1}^{S^2}\sum_{j=1}^{B} 
+\1_{ij}^{\mathrm{noobj}}(C_i-\hat{C}_i)^2 \\[4pt]
+&+ 
+\sum_{i=1}^{S^2}\1_{i}^{\mathrm{obj}}
+\sum_{c=1}^{C}(p_i(c)-\hat{p}_i(c))^2
+\end{align*}
+
+donde 
+\begin{description}
+  \item[$S^2$] Número total de celdas en la cuadrícula.
+  \item[$B$] Número de \textit{bounding boxes} por celda.
+  \item[$\1_{ij}^{\mathrm{obj}}$] Indicador que vale 1 si el objeto está en la celda $i$ y es predicho por la caja $j$; 0 en caso contrario.
+  \item[$\1_{ij}^{\mathrm{noobj}}$] Indicador que vale 1 si en la celda $i$, caja $j$, \textbf{no} hay objeto.
+  \item[$(x_i, y_i), (\hat{x}_i, \hat{y}_i)$] Coordenadas del centro de la caja predicha y real, relativas a la celda.
+  \item[$(w_i, h_i), (\hat{w}_i, \hat{h}_i)$] Ancho y alto de la caja predicha y real, relativos a la imagen completa.
+  \item[$C_i, \hat{C}_i$] Confianza predicha y real (probabilidad de que haya un objeto en la caja).
+  \item[$p_i(c), \hat{p}_i(c)$] Probabilidad predicha y real de la clase $c$ para la celda $i$.
+  \item[$\lambda_{\text{coord}}$] Ponderador de los términos de coordenadas (típicamente $5$).
+  \item[$\lambda_{\text{noobj}}$] Ponderador del término de ``no objeto'' (típicamente $0.5$).
+\end{description}
+
+\paragraph{Ventajas y evolución.}
+El diseño de YOLO permite una detección \textit{end-to-end} extremadamente rápida, alcanzando decenas de cuadros por segundo en hardware estándar, sin comprometer precisión.  
+Las versiones posteriores introducen mejoras significativas:
+\begin{itemize}
+    \item \textbf{YOLOv2} agrega normalización por \textit{batch}, entrenamiento multi-escala y \textit{anchor boxes} como en Faster R-CNN.
+    \item \textbf{YOLOv3} introduce una arquitectura residual (Darknet-53) y detección en múltiples escalas.
+    \item \textbf{YOLOv5–v8} reimplementa la arquitectura en PyTorch, optimizando para inferencia en tiempo real y agregando módulos de segmentación y seguimiento.
+\end{itemize}
+
+Estas variantes logran un equilibrio entre precisión y velocidad, lo que explica su amplia adopción en tareas aplicadas como conteo vehicular, monitoreo de fauna o inspección industrial.  
+En esta tesis se emplean modelos de la familia YOLO entrenados mediante la plataforma Roboflow, optimizados para detectar y clasificar elementos urbanos de forma automática.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{yolo.png}
+    \caption{Procesamiento de YOLO}
+    \label{fig:placeholder}
+\end{figure}
+
+\subsection{Actualidad}
+\subsubsection{Vision Transformers (ViT)}
+
+La arquitectura de \emph{transformers}, introducida en \cite{vaswani2017attention}, revolucionó el procesamiento de lenguaje natural (NLP). Su aplicación a computer vision fue propuesta en \cite{dosovitskiy2020vit}, dando origen a los \textbf{Vision Transformers (ViT)}.
+
+Los modelos basados en transformers tratan la imagen como una secuencia de parches, análoga a una secuencia de palabras. Dada una imagen \(X\in\mathbb{R}^{H\times W\times C}\) y un tamaño de parche \(p\) con \(p\mid H,W\), el número de tokens es \(N=(H/p)(W/p)\). Una imagen se transforma en \(N\) tokens, en cierto sentido, una imagen se transforma en palabras, lo que justifica el título de la publicación de \cite{dosovitskiy2020vit}. En la Figura~\ref{fig:Vit} se ilustra el flujo general.
+
+Cada parche se \textbf{aplana} (se convierte en un vector unidimensional) y se proyecta linealmente a un espacio de dimensión \(D\):
+\[
+z_i^{(0)} = E\,x_i + p_i, \qquad 
+E\in \text{M}_{D\times p^2C}(\mathbb{R}),\quad p_i\in\mathbb{R}^D,
+\]
+donde \(x_i\in\mathbb{R}^{p^2C}\) es el parche aplanado y \(p_i\) el \emph{positional encoding} que conserva información espacial.
+
+A la secuencia de parches se antepone un \textbf{token de clase} \(z_{\mathrm{cls}}\) que resume la información global. El conjunto completo se procesa mediante \(L\) bloques Transformer con normalización previa (\emph{Pre-LN}):
+\[
+Z' = Z + \mathrm{MSA}(\mathrm{LN}(Z)), \qquad
+Z^{+} = Z' + \mathrm{MLP}(\mathrm{LN}(Z')),
+\]
+donde la \textbf{atención multi-cabeza (MSA)} se define por
+\[
+\mathrm{Attn}(Q,K,V)=\mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V, \quad
+Q=ZW_Q,\ K=ZW_K,\ V=ZW_V,
+\]
+con \(d_k=D/h\) para \(h\) cabezas de atención. Cada cabeza aprende relaciones espaciales distintas entre los parches.
+
+El vector final del token de clase se usa para la \textbf{clasificación}:
+\[
+\hat y=\mathrm{softmax}\big(W_{\mathrm{cls}}\, z^{(L)}_{\mathrm{cls}}\big).
+\]
+
+Durante el \emph{fine-tuning} a una resolución mayor, se interpola en 2D el conjunto de encodings posicionales \(\{p_i\}\) y se reemplaza la cabeza de salida por una lineal.  
+La complejidad en tokens es \(\mathcal{O}(N^2D)\), dominada por la atención; el sesgo inductivo espacial proviene principalmente de la “patchificación” y los \emph{positional encodings} \cite{touvron2021deit}.
+\\
+
+\textbf{DETR.}  El modelo \emph{DEtection TRansformer} (\emph{DETR}) de \cite{carion2020detr} extiende el uso de Transformers a la \textbf{detección de objetos} en imágenes, una tarea que tradicionalmente requería varias etapas: generación de \emph{anchors}, clasificación de cada región y supresión de redundancias (\emph{non-maximum suppression}).  
+DETR simplifica este proceso al formular la detección como un problema de \textbf{predicción de conjuntos}: el modelo recibe una imagen y produce directamente un conjunto de \(M\) predicciones, donde cada predicción puede corresponder a un objeto o a la clase “no-objeto”.  
+El entrenamiento busca emparejar de forma óptima las predicciones con los objetos reales (\emph{ground truth}) mediante el \textbf{algoritmo Húngaro}, que encuentra una correspondencia uno-a-uno minimizando una función de costo que combina precisión de clase y ajuste de las cajas delimitadoras.  
+
+Este enfoque convierte la detección en un problema de \emph{matching} global, evitando reglas heurísticas, lo que hace al modelo conceptualmente más simple y completamente diferenciable.  
+El decodificador de DETR usa \emph{queries aprendibles} —vectores que representan posibles objetos— que interactúan con las características extraídas por el codificador para producir las predicciones finales.
+
+Dado el conjunto de etiquetas reales \(\{(c_i,b_i)\}_{i=1}^{n}\) y las predicciones \(\{(\hat p_j,\hat b_j)\}_{j=1}^{M}\), se resuelve
+\[
+\sigma^\star=\arg\min_{\sigma\in S_M}\sum_{i=1}^{n}\Big[-\log \hat p_{\sigma(i)}(c_i)
++\alpha\|\hat b_{\sigma(i)}-b_i\|_1
++\beta\big(1-\mathrm{IoU}(\hat b_{\sigma(i)},b_i)\big)\Big],
+\]
+y la pérdida total combina clasificación y regresión de cajas para el emparejamiento óptimo:
+\begin{align*}
+\mathcal{L}&=\sum_{i=1}^{n}\Big[\mathrm{CE}\big(\hat p_{\sigma^\star(i)},c_i\big)
++\lambda_1\|\hat b_{\sigma^\star(i)}-b_i\|_1
++\lambda_2\big(1-\mathrm{GIoU}(\hat b_{\sigma^\star(i)},b_i)\big)\Big]\\
+&\quad+\sum_{j\notin\sigma^\star([n])}\mathrm{CE}\big(\hat p_j,\text{no-obj}\big).
+\end{align*}
+
+Este enfoque elimina el uso de \emph{anchors} y \emph{non-maximum suppression (NMS)} gracias al emparejamiento bipartito y a las \emph{queries aprendibles} del decodificador.
+
+En síntesis:
+\begin{itemize}
+  \item ViT reemplaza las convoluciones por autoatención sobre parches.
+  \item DETR formula la detección como una asignación directa sin heurísticas intermedias.
+\end{itemize}
+
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{figs/Vit_arch1.png}
+    \caption{Arquitectura de ViT}
+    \label{fig:Vit}
+\end{figure}
+
+
+\subsubsection{Segmentación fundacional (SAM)}
+
+El modelo \emph{Segment Anything Model (SAM)}, propuesto en \cite{kirillov2023sam}, introduce un paradigma de segmentación \emph{promptable}: el usuario provee un \emph{prompt} (puntos, cajas, máscaras o texto) y el modelo devuelve la segmentación correspondiente.  
+Su diseño separa el cómputo pesado y el cómputo interactivo en tres módulos principales:
+\begin{enumerate}
+    \item Un \textbf{\emph{image encoder}} basado en un ViT preentrenado mediante \emph{Masked Autoencoding (MAE)}, que produce un embedding fijo de la imagen.
+    \item Un \textbf{\emph{prompt encoder}} que representa las entradas del usuario (puntos, cajas, máscaras o texto) en el mismo espacio latente.
+    \item Un \textbf{\emph{mask decoder}} ligero, que combina la información de imagen y de \emph{prompts} para predecir una o más máscaras por interacción.
+\end{enumerate}
+
+\paragraph{Codificación de imagen.}
+La entrada se reescala a \(1024\times1024\) y se procesa con un ViT-H/16 que usa atención \emph{windowed} y bloques globales.  
+El resultado es un embedding \(E_I\in\mathbb{R}^{64\times64\times256}\), que puede reutilizarse para múltiples \emph{prompts} sin volver a ejecutar el encoder, reduciendo el costo de cómputo.
+
+\paragraph{Codificación de prompts.}
+Cada tipo de \emph{prompt} se traduce a un pequeño conjunto de tokens:
+\begin{itemize}
+    \item Puntos y cajas: \(p=\mathrm{PE}(u)+e_{\text{tipo}}\), con una codificación posicional \(\mathrm{PE}\) y un vector aprendido \(e_{\text{tipo}}\).
+    \item Máscaras previas: embebidas por convoluciones y sumadas a \(E_I\).
+    \item Texto: procesado por el codificador de CLIP(Contrastive Language–Image Pretraining) del cual hablaremos en la próxima sección.
+\end{itemize}
+El conjunto de tokens resultante \(P=\{p_j\}\) es peque\~no, lo que permite respuesta rápida.
+
+\paragraph{Decodificador con atención bidireccional.}
+Un decodificador Transformer modificado realiza atención en dos direcciones: entre tokens de \emph{prompt} y regiones de la imagen.  
+Cada bloque incluye autoatención en \(P\) y \emph{cross-attention} entre \(P\) y el embedding de imagen \(E_I\):
+\[
+\mathrm{Attn}(Q,K,V)=\mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V,\qquad Q=HW_Q,\ K=HW_K,\ V=HW_V,
+\]
+donde \(H\in\{E_I\text{ aplanado},P\}\) según el tipo de bloque.  
+Tras dos bloques de interacción, el decodificador genera \(K\) máscaras, cada una definida por un token de salida \(t_k\) que produce un clasificador dinámico:
+\[
+w_k=\mathrm{MLP}(t_k),\qquad
+\ell_k(u)=\langle w_k,\phi(u)\rangle+b_k,\qquad
+\hat M_k(u)=\sigma(\ell_k(u)),
+\]
+donde \(\phi(u)\) son \emph{features} escaladas del encoder.
+
+\paragraph{Ambigüedad y ranking.}
+SAM predice \(K{=}3\) máscaras por \emph{prompt} (típicamente “objeto completo”, “parte” y “subparte”) para cubrir posibles ambigüedades.  
+Una cabeza auxiliar estima \(\widehat{\mathrm{IoU}}_k\) y ordena las máscaras por calidad.
+
+\paragraph{Entrenamiento y pérdidas.}
+La función de pérdida combina términos \emph{focal} y \emph{dice} con ponderación \(20{:}1\):
+\[
+\mathcal{L}_{\text{mask}}
+=\min_{k\le K}\big[\lambda_f\,\mathrm{Focal}(\hat M_k,y)+\lambda_d\,\mathrm{Dice}(\hat M_k,y)\big],
+\qquad
+\mathrm{Dice}=1-\frac{2\langle \hat M_k,y\rangle+\varepsilon}{\|\hat M_k\|_1+\|y\|_1+\varepsilon}.
+\]
+Además, la cabeza de IoU se entrena con error cuadrático medio:
+\[
+\mathcal{L}_{\mathrm{IoU}}=\tfrac{1}{K}\sum_k(\widehat{\mathrm{IoU}}_k-\mathrm{IoU}(\hat M_k,y))^2.
+\]
+
+\paragraph{Datos y escala.}
+SAM se preentrena en el conjunto SA-1B, compuesto por $\sim$11 millones de imágenes y $\sim$1.1 mil millones de máscaras generadas automáticamente mediante un \emph{data engine} de tres etapas.  
+El ViT-H se reentrena progresivamente a medida que crece el conjunto, alcanzando segmentación de alta calidad y generalización \emph{zero-shot}.
+
+
+\subsubsection{Aprendizaje multimodal y auto-supervisado.}
+
+El modelo \textbf{CLIP} desarrollado en \cite{radford2021clip} entrena conjuntamente un codificador de texto y otro de imagen mediante una \emph{pérdida contrastiva} de tipo \emph{InfoNCE}.  
+Para cada lote de pares imagen–texto, maximiza la similitud del par correcto y minimiza la de los pares cruzados, de modo que las representaciones de texto e imagen queden alineadas en un mismo espacio latente.  
+Esto permite realizar tareas \emph{zero-shot} simplemente formulando un \emph{prompt} textual, por ejemplo “refugio de ómnibus”, y comparando su embedding con el de la imagen.
+
+Por su parte, \textbf{DINOv2} introducido en \cite{oquab2023dinov2} demuestra que el \emph{preentrenamiento auto-supervisado} a gran escala de un ViT genera \emph{features} visuales altamente transferibles.  
+Estas representaciones pueden reutilizarse para tareas de nivel de imagen o de píxel con escaso o ningún \emph{fine-tuning}, consolidando el paradigma de modelos fundacionales auto-supervisados en visión.
+
+
+\subsubsection{Visión urbana y evaluación.}
+  \textbf{COCO} es el estándar para detección/segmentación de objetos; su métrica principal es mAP en IoU sobre umbrales $0.50{:}0.05{:}0.95$ (también se reportan $AP_{50}$ y $AP_{75}$).Revisar \cite{lin2014coco}.
+\\
+
+  \textbf{Cityscapes} es el referente en segmentación semántica urbana, con 5000 imágenes con anotación fina; la métrica es mIoU por clase y promedio. Para tareas unificadas (instancia + semántica) se usa \emph{panoptic quality} (PQ). \cite{cordts2016cityscapes}

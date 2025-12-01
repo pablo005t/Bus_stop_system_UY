@@ -1,0 +1,278 @@
+\chapter{Análisis de resultados}
+
+En este capítulo se analizan los resultados obtenidos a lo largo de las distintas iteraciones del pipeline desarrolladas en el Capítulo~\ref{Capitulo Desarrollo}. El propósito es mostrar cómo cada mejora introducida —en detección, filtrado y priorización— contribuyó a construir un sistema más estable, preciso y adecuado para la evaluación de paradas en corredores nacionales.
+
+El análisis compara el desempeño de las versiones sucesivas del sistema: desde la detección inicial y el filtrado preliminar, hasta la incorporación del modelo de segmentación y la aplicación completa del esquema AHP. A partir de estas iteraciones, el pipeline final logra identificar paradas en una ruta, depurar detecciones inconsistentes y generar recomendaciones sobre paradas redundantes y nuevas ubicaciones prioritarias para mejorar la cobertura territorial.
+
+De aquí en adelante entenderemos por \emph{sistema} un conjunto de paradas asociadas a un corredor, y denotaremos por $P(S)$ el puntaje asignado a dicho sistema mediante el procedimiento descripto en la Sección~\ref{AHP}. Cuando sea necesario, se especificarán explícitamente los puntos de interés (POIs) utilizados para el cálculo del puntaje.
+
+
+\section{Primera aproximación: Ruta 8}
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{Ruta_8_identificada.png}
+    \caption{Sistema de paradas identificado en la ruta 8}
+    \label{fig:Ruta 8 identificada}
+\end{figure}
+
+En un primer momento de la tesis hicimos una prueba de concepto para la ruta 8, donde simplificamos el problema de detección y de optimización de las paradas. El primer objetivo fue familiarizarnos con las herramientas que trabajaríamos durante la tesis, GIS, CV entre otras.
+
+\subsection{Identificación del sistema actual}
+Siguiendo lo documentado en \ref{seccion: Roboflow} y \ref{seccion: Multimodal}, usamos modelos de detección y multimodales para identificar el sistema de paradas de la ruta 8. El sistema identificado fue el de la figura \ref{fig:Ruta 8 identificada} que consta de $122$ paradas. Notaremos al sistema por $S^{8}_{id}$ el cual tiene $P(S^{8}_{id}) = 0.512$, donde los POIs utilizados en este caso fueron solamente las localidades cercanas a la ruta $8$.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{figs/fig:Distancia_entre_paradas_8.png}
+    \caption{Distancias entre paradas vecinas en Ruta 8}
+    \label{fig:Distancia_entre_paradas_8}
+\end{figure}
+Un primer análisis a realizar es la separación entre paradas, que es uno de los ítems que aporta al cálculo de $P$, obteniendo la tabla \ref{tabla: resume paradas 8} y la figura \ref{fig:Distancia_entre_paradas_8}. Recordemos que la justificación del distanciamiento de paradas es una medida de la demora que puede tener un ómnibus durante el recorrido y de posibles causas de confusión a la hora de usar una u otra parada. No tiene ningún sentido que un ómnibus de la empresa $A$ pare en una parada y otro ómnibus de la empresa $B$ pare en otra parada a 3000 metros de la anterior. 
+\begin{table}
+\centering
+\caption{Resumen de distancias entre paradas vecinas en Ruta 8 (m)}
+\label{tabla: resume paradas 8}
+\begin{tabular}{lc}
+\toprule
+Estadístico & Valor \\
+\midrule
+count & 122 \\
+mean & 1861 \\
+std & 2980 \\
+min & 134 \\
+25\% & 352 \\
+50\% (mediana) & 636 \\
+75\% & 1476 \\
+90\% & 6320 \\
+95\% & 8817 \\
+max & 15228 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La figura \ref{fig:Distibucion_espacial_Ruta8} ilustra como se distribuyen las paradas a lo largo de la ruta, generando una acumulación de paradas cerca de Montevideo (kilómetro $0$) y una menor cobertura en zonas más alejadas, donde hay menor población. 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\linewidth]{Distancia_espacial_entre_paradas_ruta_8.png}
+    \caption{Distribución de paradas Ruta 8}
+    \label{fig:Distibucion_espacial_Ruta8}
+\end{figure}
+
+\subsection{Sistema óptimo}
+El sistema óptimo obtenido aplicando lo descrito en el capítulo \ref{cap:desarrollo} es el de la figura \ref{fig:optimo_Ruta_8}. Dicho sistema $S_{opt}^8$ consta solo de $50$ paradas y tiene un $P(S_{opt}^8) = 0.564$ logrando mejor performance que $S_{id}^8$. 
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{Ruta_8_optimo.png}
+    \caption{Sistema de paradas óptimo en la ruta 8}        
+    \label{fig:optimo_Ruta_8}
+\end{figure}
+
+Esto fue la primera aproximación al problema, en la siguiente sección haremos una prueba de concepto más refinada para la Ruta 5. 
+
+\section{Una segunda iteración: Ruta 5.}
+
+El lector se puede preguntar por qué la Ruta $5$ y no continuar con la Ruta $8$, esto se debe a que tenemos información recolectada in situ y la recolección fue después que hicimos la prueba de concepto para la Ruta $8$, no había sido planificada previamente. 
+
+\subsection{Identificación del sistema actual.}
+El sistema identificado aplicando lo descrito en \ref{sec: deteccion de paradas} y \ref{Segmentacion de rutas} es el de la figura \ref{fig:Ruta 5 identificada}, al cual notaremos por $S_{id}^5$. Dicho sistema consta de $167$ paradas.
+
+De aquí en adelante los POIs utilizados, además de localidades cercanas a la ruta, agregamos escuelas cercanas e intersecciones con otras rutas (pudiendo ser desde rutas nacionales hasta caminos rurales).
+Con los anteriores POIs el sistema tiene $P(S_{id}^5) = 0.797$.
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.75\linewidth]{figs/Paradas_Ruta_5.png}
+    \caption{Sistema de paradas identificado en la ruta 5}
+    \label{fig:Ruta 5 identificada}
+\end{figure}
+
+\subsection{Sistema óptimo.}
+Replicando lo hecho para la Ruta $8$ obtenemos el sistema de paradas de la figura \ref{fig:Ruta 5 optimo}, al cual notaremos por $S_{opt}^5$ con $P(S_{opt}^5) = 0.850$.
+En este caso no haremos un análisis exploratorio de ambos sistemas como hicimos en la sección anterior. 
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{figs/ruta_5_opt.png}
+    \caption{Sistema de paradas óptimo en la ruta 5}
+    \label{fig:Ruta 5 optimo}
+\end{figure}
+
+\subsection{Mejorando el sistema de transporte.}
+
+\begin{figure}[!]
+    \centering
+    \includegraphics[width=1\linewidth]{figs/scores_ruta_5.png}
+    \caption{Cantidad de paradas por score}
+    \label{fig:scores_ruta_5}
+\end{figure}
+
+La pregunta que surge de lo anterior es como podemos usar la información del score y del sistema óptimo para mejorar el sistema, es decir, obtener un $P(S^5)$ más alto. 
+En la figura \ref{fig:scores_ruta_5} se ve que hay algunas paradas en $S_{id}^5$ que tienen un score muy bajo, haciendo que el sistema baje mucho su performance. Dichas paradas pueden ser eliminadas, definimos un sistema $S_{pruned}^5 = \{p \in S_{id}^5 :\, P(p) >0.6 \}$ que consta de $163$ paradas (solo eliminamos $4$) y obtenemos $P(S_{pruned}^5) = 0.807$. Ahora podemos agregar $4$ paradas de $S_{opt}^5$ a $S_{pruned}^5$, pero no de cualquier manera, sino que agregaremos las $4$ que estén a mayor distancia dé $S_{pruned}^5$. A este último sistema le llamaremos $S_{comb}^5$ y obtiene $ P(S_{pruned}^5) = 0.809$, el cual es presentado en la figura \ref{fig:sistema_comb_5}.
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{figs/sistema_comb_5.png}
+    \caption{Sistema de paradas combinado entre óptimo e identificado en la ruta 5}
+    \label{fig:sistema_comb_5}
+\end{figure}
+\newpage
+
+\section{La tercera es la vencida: Ruta 9.}
+
+En esta sección aplicaremos la versión final del pipeline, incorporando los mejores modelos de visión por computadora y un conjunto ampliado de POIs.
+
+\subsection{Identificación del sistema actual}
+
+Siguiendo el mismo procedimiento que en la sección anterior, identificamos el sistema de paradas de la Ruta 9. Denotaremos este sistema por $S_{id}^9$ y esta ilustrado en la figura \ref{fig:Ruta 9 identificada}.
+
+El sistema consta de $108$ paradas y obtiene un puntaje $P(S_{id}^9) = 0.852$.
+
+Los POIs utilizados en esta iteración son:
+\begin{itemize}
+    \item Localidades cercanas a la ruta.
+    \item Escuelas y centros educativos dentro de un radio de $d_s$ metros.
+    \item Intersecciones con rutas nacionales y caminos departamentales.
+\end{itemize}
+
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{figs/Ruta_9_identificada.png}
+    \caption{Sistema de paradas identificado en la ruta 9}
+    \label{fig:Ruta 9 identificada}
+\end{figure}
+
+\subsection{Sistema óptimo}
+
+Replicando el procedimiento descrito en el capítulo \ref{cap:desarrollo} obtenemos el sistema óptimo de la Ruta 9, el cual denotaremos por $S_{opt}^9$.
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{figs/optimo_ruta_9.png}
+    \caption{Sistema de paradas óptimo en la ruta 9}
+    \label{fig:optimo_ruta_9}
+\end{figure}
+Este sistema consta de $26$ paradas y su puntaje es $P(S_{opt}^9) = 0.862 $. La figura \ref{fig:optimo_ruta_9} ilustra dicho sistema. Este sistema supuestamente óptimo presenta un claro problema, bajísimo nivel de cobertura, lo que pasa es que en nuestro puntaje $P$ no castigamos la falta de cobertura, si tenemos pocas paradas, pero que acumulan muchos POIs pueden tener un muy buen puntaje y dejar muchos POIs sin cubrir; sin embargo, su promedio es mejor. 
+
+Para paliar este problema definimos $P^\prime (S)= \sum S_i - C|S|$, donde $S_i$ son los scores calculados anteriormente para cada parada y $C$ es el costo por parada, nosotros asignamos $C=0.8$. 
+
+Optimizando por la métrica $P^\prime$ usando el método de construcción de paradas que venimos usando, llegamos al sistema $S^9_{opt^\prime}$, ilustrado en la figura \ref{fig:optimo_ruta_9_sum}, el cual consta dé $143$. Obteniendo $P^\prime(S_{id}^9) = -44.1$ y $P^\prime(S^9_{opt^\prime}) = 7.2 $.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.75\linewidth]{figs/Sist_ruta9_sum.png}
+    \caption{Sistema de paradas óptimo en la ruta 9 para $P^\prime$}
+    \label{fig:optimo_ruta_9_sum}
+\end{figure}
+
+
+\chapter{Líneas futuras y mejoras del sistema}
+\label{cap:mejoras}
+
+Además de las conclusiones generales del capítulo anterior, el desarrollo del prototipo permitió identificar limitaciones técnicas y conceptuales que abren un conjunto claro de líneas de mejora. En esta sección se presentan recomendaciones orientadas a fortalecer el sistema y mejorar su precisión, cobertura y utilidad operacional.
+
+\section{Recomendaciones para fortalecer el sistema actual}
+\label{sec:mejoras_sistema_actual}
+
+\subsection{Modelos de visión por computadora más robustos}
+
+El prototipo se apoya en modelos de detección entrenados a partir de imágenes satelitales, lo que permitió construir un conjunto coherente de paradas candidatas. Sin embargo, el desempeño de estos modelos depende del tamaño y diversidad del dataset y de la arquitectura utilizada.
+
+Una línea de mejora consiste en incorporar modelos modernos de detección y segmentación capaces de trabajar con objetos pequeños y morfologías rurales heterogéneas, incluyendo arquitecturas de segmentación totalmente convolucionales y modelos basados en \emph{transformers}. En la práctica esto implica:
+\begin{itemize}
+    \item entrenar modelos específicos para refugios rurales, paradas informales y estructuras degradadas;
+    \item aplicar \emph{data augmentation} orientado a variaciones de iluminación, estación del año y resolución de imagen;
+    \item evaluar modelos auto-supervisados o multimodales que mejoren la generalización en contextos con pocos ejemplos etiquetados.
+\end{itemize}
+
+\subsection{Incorporación de nuevos puntos de interés relevantes}
+
+El análisis territorial incorporó localidades, centros educativos rurales e intersecciones, pero existen otros generadores de movilidad que no fueron contemplados y cuya presencia afecta directamente la demanda potencial de paradas. Entre ellos destacan:
+\begin{itemize}
+    \item establecimientos industriales próximos a la ruta,
+    \item tambos y explotaciones agropecuarias con mano de obra concentrada,
+    \item policlínicas y servicios rurales de baja complejidad.
+\end{itemize}
+
+La integración de estos POIs permitirá mejorar el componente de demanda de la métrica AHP y distinguir zonas donde la infraestructura actual no refleja adecuadamente los flujos de movilidad reales.
+
+\subsection{Escalado del prototipo a todos los corredores nacionales}
+
+El prototipo actual fue aplicado a rutas específicas. Un siguiente paso natural consiste en escalar el sistema a la totalidad de los corredores nacionales, para lo cual será necesario:
+\begin{itemize}
+    \item unificar el pipeline de procesamiento desde la detección hasta el cálculo de \(P(S)\);
+    \item paralelizar el análisis por tramos de ruta para aprovechar recursos de cómputo;
+    \item generar salidas estandarizadas que permitan comparar desempeño entre rutas;
+    \item integrar el sistema con flujos de actualización periódica de datos oficiales.
+\end{itemize}
+
+\subsection{Actualización y consistencia temporal de las imágenes satelitales}
+
+Durante el procesamiento se observaron discrepancias entre las paradas detectadas y la información oficial debido a diferencias temporales en las imágenes. En algunos tramos, la ruta había sido rehabilitada o ampliada, o se habían instalado nuevas paradas posteriores a la fecha de captura.
+
+Para mitigar este problema se recomienda:
+\begin{itemize}
+    \item utilizar fuentes satelitales con fecha conocida y la mayor actualidad posible;
+    \item combinar proveedores para reducir huecos temporales;
+    \item documentar la confiabilidad temporal de cada segmento procesado;
+    \item complementar con imágenes de calle (\emph{street view}) o relevamientos recientes cuando sea posible.
+\end{itemize}
+
+\section{Aspectos a mejorar en el diseño metodológico}
+\label{sec:cosas_a_mejorar}
+
+El análisis detallado de las iteraciones finales permitió identificar limitaciones estructurales tanto en la métrica AHP como en el generador de candidatos sobre el cual opera el algoritmo genético.
+
+\subsection{Limitaciones de la métrica AHP y efecto de saturación}
+
+El índice de parada \(AHP(p)\) se construyó a partir de criterios discretizados mediante \emph{buckets}, lo que llevó a que en la práctica los valores de \(AHP(p)\) se concentraran en un conjunto reducido de niveles. Dado que los sistemas evaluados tienen cardinalidad similar y composición parecida, el puntaje total:
+\[
+P(S) = \frac{1}{|S|}\sum_{p\in S}AHP(p)
+\]
+termina siendo casi constante en todo el espacio de búsqueda.
+
+Como mejora, se propone utilizar \(P'\) investigando cuál es el costo por parada correcto.
+
+\subsection{Restricciones del generador de candidatos}
+
+El pipeline actual:
+\begin{align*}
+    & \texttt{make\_candidates\_along\_route}  \\
+    \longrightarrow & \texttt{expand\_candidates} \\
+    \longrightarrow & \texttt{select\_top\_n\_with\_min\_spacing}
+\end{align*}
+
+explora solo una región muy acotada del espacio posible de configuraciones, debido a:
+\begin{itemize}
+    \item un espaciado inicial demasiado regular,
+    \item radios de expansión pequeños,
+    \item filtrados que fuerzan configuraciones equidistantes.
+\end{itemize}
+
+Como resultado, casi todos los sistemas generados comparten propiedades similares, reforzando la planicidad de la función objetivo.
+
+Líneas de mejora:
+\begin{itemize}
+    \item aumentar la resolución del \emph{grid} inicial,
+    \item usar radios de expansión variables según la densidad de POIs,
+\end{itemize}
+
+\subsection{Síntesis de mejoras metodológicas}
+
+Las mejoras anteriores no invalidan el prototipo, sino que delimitan claramente el camino hacia una versión madura del sistema. La integración de modelos de visión más robustos, POIs adicionales, una métrica más informativa y un generador de candidatos más flexible permitirá avanzar hacia configuraciones óptimas más realistas y, en última instancia, hacia una herramienta nacional de apoyo a la planificación del transporte público.
+
+
+\chapter{Conclusiones generales}
+\label{cap:conclusiones_generales}
+
+A lo largo de esta tesis se desarrolló un prototipo integral para la identificación, evaluación y gestión de paradas oficiales en rutas nacionales, integrando tres componentes principales: (i) detección automática mediante Visión por Computadora aplicada a imágenes satelitales, (ii) análisis geoespacial de corredores internacionales y puntos de interés territoriales, y (iii) un módulo de optimización multicriterio basado en AHP para evaluar configuraciones alternativas de paradas.
+
+El sistema resultante permite articular fuentes oficiales (INE, MTOP, ANEP) con información derivada de imágenes satelitales procesadas automáticamente, generando una red de paradas detectadas, validadas y priorizadas según un puntaje de calidad \(P(S)\). A partir de esta estructura, se analizaron corredores específicos (Rutas 5, 8 y 9) y se evaluaron tanto las paradas existentes como configuraciones óptimas generadas por el modelo.
+
+Los resultados muestran que es posible construir un pipeline reproducible, modular y escalable, capaz de operar desde el preprocesamiento de imágenes hasta la evaluación cuantitativa de sistemas de paradas. El enfoque integra herramientas de aprendizaje automático, geoinformática y optimización, y genera una base metodológica sólida para apoyar la toma de decisiones en el transporte interdepartamental.
+
+Este prototipo constituye una primera aproximación operativa que demuestra la viabilidad técnica de automatizar la localización de paradas y su análisis territorial, estableciendo un marco de trabajo que puede extenderse a la red completa de rutas nacionales.
+

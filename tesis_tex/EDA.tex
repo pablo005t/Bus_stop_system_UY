@@ -1,0 +1,306 @@
+\chapter{EDA}
+
+\section{Objetivo del análisis exploratorio}
+
+El análisis exploratorio de datos (EDA) tuvo como propósito describir las fuentes de información utilizadas en el sistema, revisar su calidad y obtener indicadores básicos que permitan comprender la situación actual de las rutas estudiadas. En particular, se exploraron tres componentes centrales: (i) la red vial y las paradas oficiales existentes, (ii) la distribución espacial de la demanda potencial (población e instituciones), y (iii) las imágenes satelitales empleadas para los modelos de visión por computadora.
+
+Esta etapa permitió identificar inconsistencias, duplicados y valores atípicos, además de definir parámetros operativos iniciales (por ejemplo, radios de influencia y criterios de depuración). Las secciones siguientes resumen los principales resultados y presentan las tablas, mapas y descripciones necesarias para documentar el estado real de los datos utilizados.
+
+\section{Análisis exploratorio de los datos del MTOP}
+
+El Ministerio de Transporte y Obras Públicas (MTOP) provee dos capas geoespaciales fundamentales para el análisis territorial desarrollado en esta tesis:  (i) la cartografía oficial de la red vial nacional y  (ii) la contabilidad de paradas suburbanas.  Ambas capas fueron reproyectadas al sistema métrico EPSG:32721 (UTM 21S), garantizando compatibilidad con los cálculos de distancia empleados posteriormente.
+
+%\FloatBarrier
+\subsection{Red vial del MTOP}
+
+La capa \texttt{v\_caminera\_nacional.shp} contiene la descripción oficial de todos los tramos de la red vial nacional. Cada registro incluye metadatos institucionales (código del tramo, jurisdicción, categoría del corredor), atributos operativos (cantidad de carriles, tipo de calzada, sentido de circulación) y, de forma particularmente relevante para este estudio, la geometría del tramo.
+
+La Figura~\ref{fig:tabla31} muestra un extracto representativo de los campos.
+
+\begin{figure}
+    \includegraphics[width=0.95\textwidth]{figs/Tabla3.1.png}
+    \captionof{figure}{Ejemplo de atributos disponibles en la capa vial del MTOP.}
+    \label{fig:tabla31}
+\end{figure}
+
+\paragraph{Geometría LineString.}
+
+La columna \texttt{geometry} almacena la representación espacial de cada tramo en formato \texttt{LineString}.  Un \texttt{LineString} es una secuencia ordenada de coordenadas que define una polilínea en el espacio.  En datos viales, cada \texttt{LineString} representa un tramo específico de una ruta.  
+
+Este tipo de geometría permite:
+
+\begin{itemize}
+    \item calcular la longitud real del tramo,
+    \item medir distancias ortogonales entre puntos y la carretera,
+    \item proyectar puntos sobre la traza (\texttt{project()}),
+    \item generar versiones unificadas de rutas extensas mediante \texttt{unary\_union} y \textit{line merging}.
+\end{itemize}
+
+Si bien la capa del MTOP contiene información adicional (como estado de la calzada, observaciones, o la jurisdicción administrativa), estos atributos no resultan necesarios para los objetivos específicos de esta tesis y por tanto se utilizaron solamente la geometría y el identificador numérico del corredor (\texttt{número}).
+
+%\FloatBarrier
+\subsection{Paradas suburbanas del MTOP}
+
+La capa \texttt{v\_paradas\_suburbanos.shp} almacena el inventario de paradas suburbanas del MTOP. Cada elemento está representado como un \texttt{Point} en coordenadas geográficas, acompañado de información descriptiva como código institucional, nombre, señalización (\texttt{cartel}), tipo de refugio y listado de líneas que atienden cada parada.
+
+La Figura~\ref{fig:tabla32} ilustra un extracto de estos atributos.
+
+\begin{figure}
+    \includegraphics[width=0.95\textwidth]{figs/Tabla3.2.png}
+    \captionof{figure}{Ejemplo de atributos disponibles en la capa de paradas suburbanas.}
+    \label{fig:tabla32}
+\end{figure}
+
+Si bien la capa ofrece múltiples metadatos, el análisis se concentró únicamente en:
+
+\begin{itemize}
+    \item la geometría (\texttt{Point}),
+    \item el identificador institucional (\texttt{gid}).
+\end{itemize}
+
+Es importante destacar que este inventario constituye la versión actualmente disponible en los servicios cartográficos del MTOP, pero se encuentra en proceso de actualización para incorporar nuevas paradas construidas en los últimos años. Por lo tanto, esta capa actúa como línea de base inicial, sabiendo que no refleja plenamente la infraestructura reciente y que puede presentar omisiones.
+\subsection{Asignación espacial y filtrado}
+Para vincular cada parada al corredor internacional más cercano, se utilizó la operación \texttt{sjoin\_nearest}, que:
+
+\begin{enumerate}
+    \item identifica el \texttt{LineString} más próximo a cada parada,
+    \item calcula la distancia mínima al eje vial,
+    \item asigna el \texttt{numero} de ruta correspondiente.
+\end{enumerate}
+
+Para contextualizar el análisis a las carreteras nacionales se consideraron únicamente aquellas paradas situadas a una distancia menor a 1~km del corredor internacional. De un total de 1.805 paradas registradas en la base oficial, 569 cumplen esta condición.
+
+Este filtrado constituye la base operativa sobre la que se realizarán los análisis posteriores de cobertura y optimización.
+
+%\FloatBarrier
+\subsection{Cálculo de distancias entre paradas}
+
+Una vez obtenida la traza continua de cada corredor mediante \texttt{unary\_union}  y \textit{line merging}, cada parada se proyectó sobre la ruta usando la función \texttt{project()}, la cual devuelve la distancia (en metros) desde el inicio del corredor hasta el punto proyectado. Este procedimiento genera una representación unidimensional de cada ruta, donde las paradas pueden ordenarse según su posición lineal. A partir de esa estructura, las distancias reales entre paradas consecutivas se calculan como diferencias entre posiciones proyectadas.
+
+La Figura~\ref{fig:mtop_corr_paradas} ilustra la disposición espacial de las  paradas consideradas dentro del umbral de 1~km.
+
+\begin{figure}
+    \includegraphics[width=\textwidth]{figs/mtop_corr_paradas.png}
+    \captionof{figure}{Paradas suburbanas ubicadas a menos de 1~km del corredor internacional correspondiente.}
+    \label{fig:mtop_corr_paradas}
+\end{figure}
+
+%\FloatBarrier
+\subsection{Resultados por ruta}
+
+La Figura~\ref{fig:tabla33} presenta el resumen de longitudes de corredor, número de paradas y estadísticas descriptivas de distancias inter-paradas para las rutas internacionales del 0 al 9.
+
+\begin{figure}
+    \includegraphics[width=0.95\textwidth]{figs/Tabla3.3.png}
+    \captionof{figure}{Resumen de longitud de corredor y distancias entre paradas oficiales por ruta internacional (Rutas 0--9).}
+    \label{fig:tabla33}
+\end{figure}
+
+En términos generales, se observan patrones heterogéneos entre corredores.  Rutas como la Ruta~1 y la Ruta~8 muestran una alta densidad de paradas (distancias promedio de 7.29~km y 2.11~km), mientras que corredores como la Ruta~2 y la Ruta~9 presentan separaciones medias más extensas, superiores a 
+10~km.  Asimismo, los valores máximos muestran tramos de más de 100~km sin paradas, y la reducción de más de dos tercios del inventario original (de 1.805 paradas totales a sólo 569 dentro del umbral de 1~km) evidencia las brechas de información existentes en los datos oficiales.  
+
+Este desfasaje entre la infraestructura real y el registro institucional constituye una motivación central para el desarrollo de esta tesis. La necesidad de mejorar la capacidad del MTOP para identificar, verificar y priorizar paradas se vuelve evidente a partir de este análisis exploratorio, reforzando la relevancia de las metodologías de detección automática y optimización que se presentan en los capítulos siguientes.
+
+%\FloatBarrier
+\section{Análisis de la demanda}
+\label{sec:analisis_demanda}
+
+El análisis de la demanda constituye un componente fundamental en la evaluación y posterior priorización de las paradas de ómnibus. La infraestructura vial y la ubicación de las paradas explican únicamente la dimensión física del sistema; sin embargo, para comprender su efectividad es necesario incorporar información sobre \emph{quiénes} utilizan (o podrían utilizar) ese sistema.
+
+En el modelo de decisión desarrollado en esta tesis, la demanda territorial opera como un criterio central dentro del proceso de ponderación multicriterio (AHP). Dado que la movilidad interdepartamental en Uruguay responde a múltiples factores —población, conectividad vial y servicios esenciales—, la demanda se construyó combinando tres fuentes complementarias de información:
+
+\begin{itemize}
+    \item \textbf{Localidades del INE}: proporcionan una estimación directa de la demanda poblacional mediante la agregación de los microdatos censales y su vinculación espacial con los corredores internacionales.
+    \item \textbf{Intersecciones viales}: capturan la demanda asociada a la estructura de la red de movilidad, reflejando puntos donde convergen flujos provenientes de diferentes zonas rurales y urbanas.
+    \item \textbf{Centros educativos rurales (ANEP)}: representan focos recurrentes de movilidad cotidiana, especialmente en zonas rurales donde la accesibilidad a servicios esenciales está estrechamente vinculada al transporte público.
+\end{itemize}
+
+En las subsecciones siguientes se desarrolla cada uno de estos componentes, describiendo las fuentes de datos, los procedimientos de procesamiento y georreferenciación, y su integración al análisis espacial realizado sobre los corredores internacionales (siento estos las rutas nacionales (1 a 9) más rutas de conexión (0, 11, 12, 17, 18, 26).
+
+%\FloatBarrier
+\subsection{Localidades y demanda potencial (INE)}
+\label{subsec:demanda_ine}
+
+El punto de partida para la construcción de la demanda territorial fue el archivo de microdatos de personas del último Censo nacional, publicado por el Instituto Nacional de Estadística (INE). Este archivo contiene un registro por individuo censado, incluyendo claves territoriales para departamento y localidad, así como identificadores de vivienda y hogar.
+
+La Tabla~\ref{tab:ine_personas} presenta un extracto representativo de estos microdatos.
+
+\begin{figure}
+    \includegraphics[width=0.95\textwidth]{figs/Tabla3.4.png}
+    \captionof{table}{Extracto de la base de microdatos de personas del INE (Censo).}
+    \label{tab:ine_personas}
+\end{figure}
+
+A partir de estos microdatos se generó una base agregada de población por localidad. Para ello, se normalizaron los códigos territoriales, se construyó un identificador único \texttt{LOCALIDAD\_CODE}, y se integró información auxiliar proveniente de los diccionarios oficiales del INE. Asimismo, se incorporaron coordenadas geográficas para cada localidad, necesarias para su análisis espacial.
+
+La Tabla~\ref{tab:ine_localidades} muestra un extracto de la base \texttt{merged\_localidades.csv}, resultado del proceso de agregación y enriquecimiento.
+
+\begin{figure}
+\begin{minipage}{0.95\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{figs/Tabla3.5.png}
+    \captionof{table}{Base consolidada de localidades con población asociada (INE).}
+    \label{tab:ine_localidades}
+\end{minipage}
+\end{figure}
+Si bien la base completa de localidades del país es útil para caracterizar el contexto poblacional, para efectos de analizar la infraestructura interdepartamental es necesario focalizarse únicamente en aquellas localidades que se encuentran en el entorno operativo de los corredores internacionales. Para ello, se calcularon distancias geodésicas entre cada localidad y la geometría unificada de los corredores, reteniendo únicamente aquellas ubicadas a 10\,km o menos de la red vial.
+
+La Figura~\ref{fig:localidades_corredor} muestra el resultado de este filtrado. Las localidades se clasifican en cuatro categorías según su tamaño poblacional (\emph{ciudad}, \emph{villa}, \emph{pueblo}, \emph{localidad}), y se presentan junto con las paradas de ómnibus efectivamente relevadas.
+
+\begin{figure}
+    \includegraphics[width=0.95\textwidth]{figs/mtop_corr_localidaes.png}
+    \captionof{figure}{Localidades ubicadas a menos de 10~km de los corredores internacionales, clasificadas según tamaño de población, junto con las paradas de ómnibus detectadas.}
+    \label{fig:localidades_corredor}
+\end{figure}
+
+La figura permite observar una mayor densidad de paradas en los entornos de ciudades y villas de tamaño medio o grande, especialmente en los tramos próximos al área metropolitana. A medida que los corredores avanzan hacia zonas rurales, aparecen localidades pequeñas o dispersas con una menor dotación de paradas en su entorno inmediato. Esta distribución evidencia la importancia de incorporar la población como aproximación de la demanda potencial en las etapas posteriores de optimización.
+
+%\FloatBarrier
+\subsection{Intersecciones y nodos de concentración de flujo}
+\label{subsec:intersecciones}
+
+La relevancia de las intersecciones como puntos estratégicos dentro del sistema de transporte surgió a partir de una instancia puntual de trabajo de campo realizada durante un viaje entre Montevideo y Rivera. En dicha oportunidad se utilizó una aplicación móvil con geolocalización en tiempo real para registrar manualmente la ubicación precisa de paradas efectivamente utilizadas por los usuarios. Este relevamiento espontáneo permitió observar que muchas paradas informales o no declaradas coinciden con \textbf{intersecciones viales relevantes}: accesos a localidades, cruces con caminos vecinales o nodos donde convergen distintos flujos de movilidad y \textbf{escuelas rurales}. Estas observaciones motivaron la incorporación explícita de estos componente al análisis de demanda y del modelo posterior de priorización.
+
+Las intersecciones se obtuvieron a partir de la cartografía de caminería nacional del MTOP (ya analizada en el bloque anterior). Una vez proyectado el dataset al sistema UTM 21S (\texttt{EPSG:32721}), se identificaron los nodos donde convergen dos o más segmentos viales. Cada intersección se asignó al corredor más cercano dentro de la red internacional, para así caracterizar la intensidad de la conectividad vial por tramo.
+
+La Tabla~\ref{tab:intersecciones_por_corredor} resume la cantidad de intersecciones detectadas para cada corredor internacional.
+
+\begin{figure}
+    \includegraphics[width=0.55\textwidth]{figs/Tabla3.6.png}
+    \captionof{table}{Cantidad de intersecciones viales asociadas a cada corredor internacional.}
+    \label{tab:intersecciones_por_corredor}
+\end{figure}
+
+Para complementar la interpretación cuantitativa, se elaboró un mapa que muestra la distribución espacial de las intersecciones sobre la red de caminería nacional, junto con las paradas detectadas por el modelo de visión por computadora. Este mapa permite visualizar zonas donde la red vial presenta mayor complejidad estructural, lo cual tiende a coincidir con una mayor frecuencia de paradas operativas.
+
+\begin{figure}
+    \includegraphics[width=0.92\textwidth]{figs/mapa_vial_parada_camineria.png}
+    \captionof{figure}{Distribución de intersecciones viales sobre la caminería nacional y paradas detectadas en los corredores internacionales.}
+    \label{fig:intersecciones_mapa}
+\end{figure}
+
+La figura muestra que los corredores con mayor densidad de ramales y nodos viales —especialmente en la zona metropolitana, en los accesos a ciudades departamentales, y en algunos tramos del norte del país— presentan también una mayor concentración de paradas. Esto coincide con lo observado en campo: las intersecciones operan como puntos de transferencia donde los usuarios acceden o descienden del transporte, independientemente del tamaño de la localidad cercana.
+
+Por lo tanto, la densidad de intersecciones se incorpora como una medida indirecta de demanda y como un criterio complementario al tamaño poblacional, formando parte del conjunto de variables consideradas posteriormente en la etapa de priorización mediante el método AHP.
+
+%\FloatBarrier
+\subsection{Centros educativos rurales CEIP-ANEP}
+\label{subsec:anep}
+
+Se incorporó al análisis exploratorio la información provista por la Administración Nacional de Educación Pública (ANEP), con el fin de identificar centros educativos próximos a los corredores internacionales. La base original de ANEP contiene 2\,183 registros georreferenciados, que abarcan distintos subsistemas educativos (DGEIP, CES, CETP), áreas urbanas y rurales, y tipos de institución. Cada registro incluye atributos administrativos (nombre oficial, número, subsistema, tipo de centro, turno, dirección, identificador \texttt{RUEE}) y la geometría puntual proyectada en coordenadas \texttt{EPSG:32721}.
+
+La Tabla~\ref{tab:anep_raw} muestra un extracto representativo de esta base previo a cualquier procesamiento.
+
+\begin{figure}
+    \captionof{table}{Extracto de la base de centros educativos georreferenciados de ANEP.}
+    \label{tab:anep_raw}
+    \includegraphics[width=0.98\textwidth]{figs/Tabla3.7.png}
+\end{figure}
+
+Para este estudio se seleccionaron únicamente las instituciones identificadas como \texttt{Area = RURAL}, obteniéndose un total de 1\,029 escuelas rurales a nivel nacional. Con el fin de determinar aquellas directamente vinculadas a la red interdepartamental, se realizó un cruce espacial con los corredores internacionales del MTOP. 
+
+Las geometrías de los corredores se proyectaron al sistema \texttt{EPSG:32721} y se generó un buffer de 1~km alrededor de cada tramo. Mediante un \textit{spatial join} se identificaron las escuelas rurales ubicadas dentro de dicho buffer, obteniéndose 86 escuelas próximas a corredores internacionales.
+
+La Figura~\ref{fig:anep} muestra la distribución espacial de estas escuelas junto con las paradas detectadas, las localidades clasificadas por tamaño y la red vial completa.
+
+\begin{figure}
+    \captionof{figure}{Escuelas rurales ANEP ubicadas a menos de 1~km de los corredores internacionales, junto con localidades y paradas cercanas.}
+    \label{fig:anep}
+    \includegraphics[width=0.98\textwidth]{figs/anep.png}
+\end{figure}
+
+Dado que algunas escuelas rurales se ubican en zonas de convergencia o cercanas a más de un corredor, se realizó un análisis adicional para asignar cada escuela a las rutas que se encuentran dentro de su buffer de influencia. Por este motivo, el número total de asociaciones puede superar el número de escuelas únicas.
+
+La Tabla~\ref{tab:escuelas_corredores} presenta la cantidad de vínculos escuela–ruta obtenidos mediante este procedimiento. Las Rutas~5 y~3 concentran la mayor cantidad de asociaciones, seguidas por las Rutas~8 y~9, lo que refleja su rol estructural dentro de la red nacional.
+
+\begin{figure}
+    \captionof{table}{Cantidad de asociaciones escuela--corredor para escuelas rurales ubicadas a menos de 1~km de la red internacional.}
+    \label{tab:escuelas_corredores}
+    \includegraphics[width=0.5\textwidth]{figs/Tabla3.8.png}
+\end{figure}
+
+La integración de los centros educativos rurales al análisis de la demanda permite capturar patrones de movilidad asociados a servicios esenciales, complementando la dimensión poblacional y la estructura de conectividad vial. La combinación de estos tres componentes —localidades, intersecciones y escuelas rurales— ofrece una caracterización robusta del territorio y establece la base conceptual necesaria para la fase posterior de priorización multicriterio.
+
+\section{Construcción inicial del dataset de imagenes}
+
+El punto de partida consistió en utilizar el archivo georreferenciado de paradas provisto por el MTOP para descargar imágenes satelitales centradas en cada una de ellas. Estas imágenes conformaron el primer conjunto de entrenamiento del modelo de detección. Las figuras ~\ref{fig:ejemplos_imagenes} y \ref{fig:ejemplos_imagenes2} muestran ejemplos de imágenes. Un ejemplo típico de una parada rural visible desde vista aérea es el de la figura \ref{fig:satelital_paradas}, que sirvió como caso base para la definición de la clase \texttt{bus-stop}.
+
+\begin{figure}
+\centering
+\begin{minipage}{0.48\textwidth}
+    \centering
+    \begin{subfigure}{\textwidth}
+        \includegraphics[width=\textwidth]{figs/ruta5_pt_00031_z20.png}
+    \end{subfigure}
+
+    \begin{subfigure}{\textwidth}
+        \includegraphics[width=\textwidth]{figs/ruta5_pt_00084_z20.png}
+    \end{subfigure}
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\textwidth}
+    \centering
+    \begin{subfigure}{\textwidth}
+        \includegraphics[width=\textwidth]{figs/ruta8_pt_11452_z20.png}
+    \end{subfigure}
+
+    \begin{subfigure}{\textwidth}
+        \includegraphics[width=\textwidth]{figs/ruta8_pt_11467_z20.png}
+    \end{subfigure}
+
+\end{minipage}
+
+\caption{Ejemplos de imagenes}
+\label{fig:ejemplos_imagenes}
+\end{figure}
+
+\begin{figure}
+\centering
+\begin{minipage}{0.48\textwidth}
+    \centering
+    \begin{subfigure}{\textwidth}
+        \includegraphics[width=\textwidth]{figs/ruta8_pt_11402_z20.png}
+    \end{subfigure}
+
+    \begin{subfigure}{\textwidth}
+        \includegraphics[width=\textwidth]{figs/ruta8_pt_11293_z20.png}
+    \end{subfigure}
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\textwidth}
+    \centering
+    \begin{subfigure}{\textwidth}
+        \includegraphics[width=\textwidth]{figs/ruta9_pt_00067_z20.png}
+    \end{subfigure}
+
+    \begin{subfigure}{\textwidth}
+        \includegraphics[width=\textwidth]{figs/ruta9_pt_00331_z20.png}
+    \end{subfigure}
+
+\end{minipage}
+
+\caption{Ejemplos de imagenes}
+\label{fig:ejemplos_imagenes2}
+\end{figure}
+
+
+\begin{figure}
+    \centering
+    \caption{Ejemplo de imagen satelital correspondiente a una parada formal utilizada en el primer conjunto de entrenamiento.}
+    \label{fig:satelital_paradas}
+    \includegraphics[width=0.45\textwidth]{figs/imagen_satelital_parada.png}
+\end{figure}
+
+
+\section{Conclusiones del análisis exploratorio}
+
+El EDA presentado en este capítulo constituye la base empírica y conceptual sobre la cual se desarrolla el sistema propuesto. A lo largo del capítulo se integraron tres dimensiones complementarias del territorio: la estructura vial brindada por el MTOP, la demanda potencial derivada de datos del INE, y los puntos de interés críticos —intersecciones relevantes y escuelas rurales— identificados a partir de observación empírica y contrastados con fuentes oficiales.
+
+El EDA aporta dos insumos fundamentales para las etapas siguientes:
+
+\begin{itemize}
+    \item \textbf{Una estimación espacialmente explícita de la demanda}, integrada por población de localidades, puntos de cruce y proximidad a centros educativos.
+    \item \textbf{Un entendimiento profundo del territorio vial}, incluyendo patrones observados en campo, la relevancia de caminos secundarios y la morfología típica de cada corredor.
+\end{itemize}
+
+%En conjunto, estos elementos no solo caracterizan el problema, sino que definen los criterios, métricas y restricciones que serán considerados en el sistema de optimización. El EDA cumple así un doble rol: documenta el comportamiento del territorio y, simultáneamente, establece la estructura conceptual que sustentará el modelo multicriterio de priorización.

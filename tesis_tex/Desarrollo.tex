@@ -1,0 +1,718 @@
+\chapter{Desarrollo} \label{cap:desarrollo}
+
+En este capítulo se presenta el desarrollo completo del sistema propuesto, abarcando tanto la construcción de los modelos de visión por computadora como la aplicación del esquema de priorización multicriterio (AHP). En primer lugar, se describe el proceso de captura, preparación y entrenamiento de los modelos utilizados para la detección automática de paradas de ómnibus a partir de imágenes satelitales. Posteriormente, se detalla la integración de estos resultados con las capas territoriales analizadas en el capítulo anterior y se introduce la metodología AHP empleada para evaluar y priorizar ubicaciones a lo largo de los corredores seleccionados. En conjunto, este capítulo documenta los componentes técnicos y analíticos que permiten operacionalizar el sistema end-to-end propuesto en esta tesis.
+
+\section{Modelo de detección de paradas}
+
+La detección automática de paradas constituye uno de los pilares metodológicos de esta tesis. El proyecto originalmente presentado a ANII contemplaba el uso de imágenes de \emph{Google Street View} para identificar refugios y señalización vial en rutas nacionales. Sin embargo, al no haberse adjudicado la licitación correspondiente, no se obtuvo acceso al conjunto de imágenes de Street View previsto en la propuesta original. 
+
+Frente a esta limitación contractual, se optó por utilizar imágenes satelitales de \emph{Google Static Maps} como \emph{proxy} de observación territorial. A pesar de las diferencias con el enfoque inicial, las imágenes satelitales demostraron ser adecuadas para 
+capturar el estado real de la infraestructura. El proceso de detección basado en visión por computadora se construyó de forma iterativa, combinando descargas sistemáticas de imágenes, etiquetado manual y la incorporación progresiva de ejemplos difíciles que permitieron robustecer el modelo.
+
+\subsection{Primera iteración del modelo y necesidad de incorporar falsos positivos}
+
+Al entrenar el primer modelo únicamente con paradas “limpias”, se observó rápidamente un patrón consistente: el modelo confundía estructuras rectangulares, vehículos y sombras fuertes con paradas de ómnibus. Esto reveló que el conjunto inicial era insuficiente para capturar la variabilidad real del entorno vial.
+
+Para mejorar la robustez del modelo se descargaron cientos de imágenes adicionales a lo largo de la Ruta~8. Para ello se aplicó un procedimiento de muestreo sistemático: cada corredor se reproyectó a \mbox{EPSG:32721} y se generaron puntos equiespaciados cada 50 metros sobre su geometría. Cada uno de estos puntos sirvió como centro de una consulta a la API de \textit{Google Static Maps}, utilizando un \texttt{zoom = 20} y un tamaño de \mbox{640$\times$640 píxeles}. Esta configuración permitió capturar suficiente detalle para distinguir refugios pequeños, estructuras deterioradas o sombras profundas, manteniendo al mismo tiempo un área de cobertura adecuada alrededor del eje vial. El mismo esquema de muestreo fue reutilizado posteriormente para las Rutas~5 y~9, garantizando consistencia espacial en todo el pipeline.
+
+Las imágenes descargadas se almacenaron en una estructura de carpetas jerárquica en Google Drive que acompañó la evolución del dataset. Inicialmente se distinguían únicamente dos categorías: \texttt{parada\_segura}, que agrupaba detecciones con una confianza superior a 0.8, y \texttt{parada\_no\_segura}, que incluía aquellas con puntajes intermedios (entre 0.6 y 0.8). Esta separación permitió concentrar el etiquetado manual en los casos más ambiguos, sin perder información valiosa para el reentrenamiento.
+
+En esta etapa también se incorporó una clasificación adicional mediante las carpetas \texttt{parada\_real} y \texttt{parada\_no\_real}, creadas específicamente para aplicar una segunda capa de filtrado sobre las detecciones. En una primera instancia, esta validación se apoyó en un modelo multimodal que permitió realizar una depuración inicial de las imágenes (el funcionamiento detallado de esta herramienta se desarrolla más adelante en el capítulo de Desarrollo). Sin embargo, el filtrado definitivo del pipeline provino de la integración del modelo de segmentación de rutas, que permitió distinguir con mayor precisión si una detección se encontraba efectivamente asociada al trazado vial o si correspondía a artefactos ajenos a la infraestructura —como sombras, vehículos o estructuras de forma rectangular.
+
+Esta combinación de filtros sucesivos condujo a la consolidación del conjunto final de \texttt{paradas\_reales}. Durante este proceso se identificaron manualmente numerosos casos problemáticos que actuaron como \textbf{falsos positivos}, tales como sombras profundas, techos rectangulares o camiones detenidos, que fueron incorporados explícitamente al proceso de reentrenamiento para mejorar la robustez del modelo.
+\begin{figure}
+    \centering
+    \caption{Ejemplos de falsos positivos incorporados al entrenamiento para mejorar la robustez del modelo.}
+    \label{fig:falsos_positivos}
+
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figs/imagen_satelital_camion.png}
+        \caption{Camión confundido con refugio.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figs/imagen_satelital_sombra.png}
+        \caption{Sombra profunda confundida con estructura.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figs/imagen_satelital_rectangular.png}
+        \caption{Techo rectangular confundido con parada.}
+    \end{subfigure}
+
+\end{figure}
+\subsection{Evolución del dataset}
+
+La primera versión del dataset (Eval~1) contenía únicamente 38 imágenes obtenidas a partir de paradas oficiales, sin ningún tipo de augmentations. Si bien permitió entrenar un modelo inicial, rápidamente evidenció limitaciones de desempeño. 
+
+En la segunda iteración (Eval~2), el dataset se amplió a 110 imágenes, manteniendo aún una estructura simple sin transformaciones adicionales, pero incluyendo tags de falsos. Este aumento mejoró parcialmente los resultados, pero no abordó la falta de variabilidad presente en el entorno real.
+
+La tercera versión (Eval~3) marcó un avance sustantivo: el conjunto de imágenes alcanzó más de 2.000 ejemplos, obtenidos mediante muestreo sistemático a lo largo de la Ruta~8, el cual fue calibrado para balancear la presencia de los tags de falsos positivos. Además, por primera vez se incorporaron augmentations básicas, como \textit{flips} horizontal y vertical y variaciones leves de exposición. 
+
+Finalmente, la cuarta iteración (Eval~4) consolidó el dataset con más de 2.200 imágenes y un esquema de augmentations más robusto, incorporando rotaciones, variaciones de brillo y saturación, y ajustes más amplios de exposición. Esta versión sirvió como base final para el entrenamiento del modelo utilizado en esta tesis.
+
+Aunque el aumento del dataset fue el factor más determinante para mejorar el rendimiento del modelo, se incorporaron también algunas \emph{data augmentations} básicas que ayudaron a incrementar la variabilidad visual de las imágenes sin necesidad de recolectar nuevos datos. 
+
+Aquí tenemos un resumen de las augmentations aplicadas:
+
+\begin{itemize}
+    \item \textbf{Eval~1 y Eval~2:} sin augmentations.
+    \item \textbf{Eval~3:} \emph{flip} horizontal y vertical; variaciones de exposición entre −9\% y +9\%.
+    \item \textbf{Eval~4:} \emph{flip} horizontal y vertical; rotación a 90$^\circ$ (clockwise y counter-clockwise); variaciones de saturación (−25\% a +25\%); brillo (−15\% a +15\%); y exposición (−9\% a +9\%).
+\end{itemize}
+
+La versión final del dataset  cuenta con un balance adecuado entre positivos, negativos y casos difíciles. La combinación de muestreo sistemático, inclusión de falsos positivos y augmentations progresiva permitió construir un conjunto representativo de la diversidad visual del territorio, robusto frente a variaciones contextuales y adecuado para el entrenamiento del modelo final de detección. Este dataset iterativo alimentó directamente al modelo de identificación de paradas descrito en el desarrollo.
+
+\subsection{Entrenamiento del modelo de detección de paradas} \label{sec: deteccion de paradas}
+
+El modelo resultante constituye la base del pipeline de identificación automática de posibles paradas sobre la red nacional, integrando información geoespacial con técnicas de visión por computadora.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figs/Tabla6.1.png}
+    \caption{Resumen de los modelos entrenados en Roboflow, sus arquitecturas y métricas de desempeño.}
+    \label{fig:roboflow_models}
+\end{figure}
+El proceso de entrenamiento se llevó adelante en la plataforma Roboflow y estuvo directamente vinculado a la evolución del dataset descrita en la sección anterior. A medida que las distintas iteraciones del dataset (Eval~1 a Eval~4) incorporaron nuevos ejemplos positivos, negativos, \textit{hard negatives} y augmentations progresivas, se entrenaron distintos modelos exploratorios con el objetivo de identificar la arquitectura más adecuada.
+
+En las primeras fases (Eval~1 y Eval~2), los modelos entrenados —tanto con RF-DETR como con YOLO— mostraron un desempeño limitado debido al reducido tamaño y la escasa variabilidad del dataset. Sin embargo, estas versiones permitieron identificar los principales patrones de error, especialmente las confusiones con camiones, techos planos y sombras.
+
+A partir de la tercera iteración (Eval~3), el aumento sustantivo del dataset (más de 2.000 imágenes) y la incorporación de augmentations básicas permitieron entrenar modelos con una mejora clara en las métricas. Finalmente, con la cuarta versión del dataset (Eval~4), que integró más de 2.200 imágenes y un esquema de augmentations más robusto, se alcanzó el desempeño más estable y generalizable.
+
+Entre todas las pruebas realizadas, el mejor equilibrio entre precisión, \textit{recall} y estabilidad se obtuvo con la arquitectura \textbf{RF-DETR (Nano)}, que logró:
+
+\begin{itemize}
+    \item \textbf{mAP@50:} 88.6\,\%
+    \item \textbf{Precisión:} 90.5\,\%
+    \item \textbf{Recall:} 90.0\,\%
+\end{itemize}
+
+En comparación, los modelos entrenados con \textbf{YOLOv11 (Fast)} alcanzaron métricas levemente inferiores (mAP@50 = 87.1\,\%, precisión = 86.5\,\%, \textit{recall} = 79.9\,\%). Por este motivo, \textbf{RF-DETR (Nano)} fue seleccionado como modelo final de detección.
+
+El entrenamiento se realizó utilizando la configuración estándar de Roboflow, con una partición del 70\,\% para entrenamiento, 20\,\% para validación y 10\,\% para prueba. El resumen de los modelos entrenados y sus métricas finales se presenta en la Figura~\ref{fig:roboflow_models}. En todos los casos, las curvas de entrenamiento mostraron una convergencia estable y sin indicios de sobreajuste significativo.
+
+\subsection{Resultados y revisión visual}
+
+Si bien el modelo final presenta un desempeño sólido y adecuado para la escala del problema, el análisis visual posterior evidenció que ciertos patrones de error persistieron en zonas específicas del territorio, particularmente en áreas con sombras proyectadas o estructuras rectangulares. Estos casos motivaron la incorporación de una segunda etapa basada en \textbf{validación asistida mediante modelos de lenguaje}, que permitió filtrar y refinar las detecciones generadas por el modelo base, y que luego fue sustituida por el filtrado con la segmentación de la ruta. 
+
+\section{Validación con modelo de lenguaje}
+\label{sec:llm-validation}
+
+Como se describió en la Sección~6.1, el modelo de detección entrenado en Roboflow logró un desempeño adecuado sobre las imágenes satelitales generadas a partir de la base del MTOP; sin embargo, la revisión visual posterior mostró que persistían falsos positivos en escenarios recurrentes (sombras, accesos rurales, techos pequeños junto a la ruta o vehículos detenidos). Para reducir esta carga de revisión manual se incorporó una segunda capa de validación basada en \textbf{modelos de lenguaje multimodales (VLM)}, capaces de razonar sobre una imagen y emitir un veredicto estructurado acerca de si la detección corresponde efectivamente a una parada.
+
+El objetivo de esta etapa no fue volver a detectar paradas, sino \textbf{verificar} las detecciones propuestas por el modelo de visión, actuando como un ``anotador estricto'' que sólo confirma las detecciones cuando hay evidencia visual clara. De este modo, las imágenes que el modelo de visión marcaba como \emph{posibles} paradas podían clasificarse en tres grupos operativos: (i) aceptadas automáticamente, (ii) rechazadas automáticamente y (iii) derivadas a revisión humana.
+
+\subsection{Modelos utilizados}
+
+Se probaron dos enfoques de validación multimodal, aunque el modelo finalmente adoptado fue \textbf{GLM-4.5V}, por su mayor estabilidad y capacidad de procesar lotes completos de imágenes:
+
+\begin{enumerate}
+    \item \textbf{Etapa exploratoria con Qwen2-VL-7B-Instruct.} 
+    Se realizó una primera prueba local utilizando el modelo \texttt{Qwen/Qwen2-VL-7B-Instruct}, ejecutado con cuantización en 4 bits en GPU T4. Esta versión permitió validar la viabilidad del enfoque y ajustar el diseño de los \textit{prompts}, aunque presentó ciertas limitaciones en la consistencia de las respuestas JSON y en la sensibilidad visual sobre imágenes satelitales.
+    \item \textbf{Validación final con GLM-4.5V.}
+    El proceso definitivo se implementó mediante el modelo visual \texttt{glm-4.5v}, accedido a través de la API de Zhipu-AI. Este modelo demostró un mejor equilibrio entre comprensión semántica y precisión visual, permitiendo automatizar la clasificación de detecciones en dos subconjuntos:
+    \texttt{paradas reales} (detecciones confirmadas) y \texttt{paradas no reales} (detecciones dudosas o rechazadas).
+\end{enumerate}
+
+
+\subsection{Diseño de los \textit{prompts}}
+
+El punto central de esta etapa fue el diseño de \textit{prompts} estrictos que obligaran al modelo de lenguaje a:
+(i) mirar la imagen y no ``alucinar'',
+(ii) responder en un formato parseable y
+(iii) ser conservador cuando la evidencia no fuera clara.
+
+En la primera notebook se usó un \textit{prompt} en inglés, pensado para Qwen2-VL, con las siguientes instrucciones:
+
+\begin{verbatim}
+"You are verifying annotations made by a computer vision model 
+that detects bus stops in satellite imagery. ...
+Respond ONLY in this JSON format:
+{ "is_bus_stop": true|false, "reason": "short one-line explanation" }
+- Confirm (true) only if you clearly see a bus stop...
+- If unsure or unclear, default to false."
+\end{verbatim}
+
+Este \textit{prompt} fuerza dos decisiones importantes:
+
+\begin{itemize}
+    \item \textbf{Salida estructurada.} Se exige JSON del tipo
+    \begin{verbatim}
+    {"is_bus_stop": true|false, 
+     "reason": "..."}, \end{verbatim}
+     lo que permite luego filtrar, contar, registrar o volver a pasar las imágenes por otro modelo.
+    \item \textbf{Criterio conservador.} Se instruye explícitamente: ``\emph{If unsure or unclear, default to false}'', de forma que el modelo de lenguaje actúe como un verificador y no como un detector.
+\end{itemize}
+
+Luego se preparó una versión equivalente en español, más corta y pensada para usar \emph{few-shot} visual:
+
+\begin{verbatim}
+"Eres un verificador. La imagen fue MARCADA por otro modelo como posible
+PARADA DE ÓMNIBUS. Puede estar mal. Si NO estás seguro, responde false.
+Responde SOLO JSON válido, sin texto extra:
+{"is_bus_stop": true|false, "reason": "≤1 línea"}
+Criterios: aceptar solo si se ve claramente un refugio o una señal..."
+\end{verbatim}
+
+Para reforzar el comportamiento se usó un esquema de \textbf{few-shot visual}: antes de la consulta real, se le mostraba al modelo una imagen positiva (parada real) con la respuesta esperada y una imagen negativa (galpón/caseta junto a la ruta) también con la respuesta esperada. El código correspondiente fue:
+
+\begin{verbatim}
+def qwen_verify(img, fewshot_pos, fewshot_neg):
+    msgs = [
+      {"role":"system","content":"Responde estrictamente en JSON válido."},
+      ... ejemplo positivo ...,
+      ... ejemplo negativo ...
+    ]
+    return msgs
+\end{verbatim}
+
+Esto ayudó a que el modelo priorizara los patrones visuales que realmente nos interesaban (refugio pequeño, estructura junto a la carretera) y rechazara los casos que el detector de visión estaba confundiendo con frecuencia.
+
+\subsection{Flujo de validación y partición de carpetas}
+
+La validación se aplicó sobre las imágenes que, en la etapa anterior, habían quedado en la carpeta de \emph{detecciones} del modelo de Roboflow. El flujo fue:
+
+\begin{enumerate}
+    \item Leer imagen detectada.
+    \item Enviarla al VLM junto con el \textit{prompt} estricto.
+    \item Parsear la respuesta y recuperar el JSON. Para manejar las salidas no perfectamente formateadas se definió una función de sanitización:
+\begin{verbatim}
+def safe_json(txt):
+    m = re.search(r"\{.*\}", txt, re.S)
+    if not m:
+        return {"is_bus_stop": False, "reason": "no JSON"}
+    try:
+        return json.loads(m.group())
+    except json.JSONDecodeError:
+        return {"is_bus_stop": False, "reason": "invalid JSON"}
+\end{verbatim}
+    \item Si \verb|is_bus_stop == true|, copiar la imagen a la carpeta de \texttt{paradas\_reales}; en caso contrario, a \texttt{paradas\_a\_revisar}.
+\end{enumerate}
+
+En la notebook con \texttt{glm-4.5v} este flujo quedó explicitado:
+
+\begin{verbatim}
+REAL = "/content/drive/MyDrive/paradas_reales"
+REV  = "/content/drive/MyDrive/paradas_no_reales"
+
+if veredicto == "correct":
+    shutil.copy(img, os.path.join(REAL, basename))
+else:
+    shutil.copy(img, os.path.join(REV,  basename))
+\end{verbatim}
+
+De esta manera, la salida del modelo de lenguaje quedó perfectamente alineada con la organización de carpetas que se había planteado desde la detección: primero el modelo de visión propone, luego el modelo de lenguaje depura.
+
+\subsection{Tratamiento de imágenes grandes y recortes}
+
+Un problema recurrente en imágenes satelitales es que la estructura de la parada ocupa una región muy pequeña del cuadro completo. Para evitar que el VLM “no viera” la parada, se implementó un barrido por \textit{tiles}:
+
+\begin{verbatim}
+def tile_iter(img, size=896, overlap=128):
+    ...
+    yield img.crop((x,y,x+size,y+size)), (x,y,x+size,y+size)
+\end{verbatim}
+
+Cada \textit{tile} se enviaba al modelo con el mismo \textit{prompt}, y se quedaba con el mejor resultado. Este esquema es coherente con el origen del dataset (paradas pequeñas vistas desde arriba) y permitió reutilizar el mismo modelo de lenguaje sin necesidad de entrenar uno específico para detección a múltiples escalas.
+
+\subsection{Resultados y discusión}
+
+La incorporación del modelo de lenguaje permitió \textbf{eliminar de manera automática varios de los falsos positivos más evidentes}, especialmente los vinculados a:
+\begin{itemize}
+    \item entradas a predios rurales sin señalización,
+    \item sombras proyectadas sobre la calzada,
+    \item pequeños techos o casetas aisladas sin conexión evidente con la ruta,
+    \item vehículos o maquinarias detectados por el modelo de visión.
+\end{itemize}
+
+Aún así, el verificador multimodal mantuvo una postura conservadora (por diseño): en los casos de baja resolución, refugios parcialmente cubiertos por árboles o estructuras similares a una parada pero sin señal visible, el modelo tendió a responder \verb|false| o a derivar la imagen a la carpeta de decarte. Esto es coherente con el objetivo de esta etapa, que no era maximizar \textit{recall}, sino \textbf{reducir la carga de revisión humana sobre resultados obviamente erróneos}.
+
+En términos operativos, esta capa de validación permitió que la carpeta de detecciones originales se particionara en dos subconjuntos más útiles para la siguiente etapa de la tesis:
+\begin{enumerate}
+    \item un conjunto más ``limpio'' de paradas probables, que luego puede alimentarse al modelo AHP;
+    \item un conjunto de casos dudosos que sirve como fuente de nuevos \textit{hard negatives} o de etiquetado manual asistido.
+\end{enumerate}
+
+\subsection{Conclusiones y relación con las etapas siguientes}
+
+En síntesis, la validación con el modelo de lenguaje multimodal permitió confirmar que los VLM actuales pueden operar como un \textbf{filtro semántico} complementario para las detecciones del modelo de visión, especialmente en contextos rurales donde predominan objetos pequeños y estructuras visualmente similares. Si bien esta prueba resultó útil para depurar resultados preliminares y establecer la estructura de carpetas utilizada posteriormente en la iteración inicial sobre la Ruta~8, el análisis comparativo mostró que su aporte no superó al desempeño del filtro basado en segmentación vial. Por este motivo, y con el fin de asegurar consistencia, menor variabilidad y un procesamiento más eficiente a escala nacional, el \textbf{pipeline final adoptado en esta tesis incorpora únicamente la segmentación de rutas como etapa de filtrado}. No obstante, la experimentación con VLM deja un aprendizaje valioso y abre una línea clara de trabajo futuro para enriquecer la validación semántica de paradas detectadas.
+
+
+\section{Procesamiento de las detecciones}
+
+Una vez entrenado el modelo en Roboflow, la detección de paradas se integró en el pipeline mediante la API oficial de la plataforma. Esta etapa se implementó en Python dentro del entorno de Google Colab, permitiendo automatizar el análisis de miles de imágenes satelitales. El flujo de trabajo combina funcionalidades de \texttt{roboflow}, \texttt{OpenCV}, \texttt{Pillow}, \texttt{shapely} y \texttt{GeoPandas}, y constituye la base operativa para generar las detecciones que posteriormente alimentan las etapas de filtrado y optimización.
+
+\subsubsection*{1. Conexión con Roboflow y obtención de predicciones}
+
+El modelo final se invoca mediante la API de Roboflow utilizando una clave privada. Cada imagen se envía al endpoint del modelo y se reciben como respuesta las detecciones en formato JSON, incluyendo coordenadas del bounding box, clase asignada y nivel de confianza.
+
+\begin{verbatim}
+from roboflow import Roboflow
+
+rf = Roboflow(api_key=ROBOFLOW_API_KEY)
+project = rf.project("tesis-um-n0pxr")
+model   = project.version(2).model
+
+result = model.predict(
+    "/content/parada_991_zoom_20.png",
+    confidence=40, overlap=30
+).json()
+\end{verbatim}
+
+Este mecanismo permite procesar cualquier imagen local o remota, lo que facilita la ejecución masiva sobre conjuntos de imágenes descargadas para cada ruta.
+
+\subsubsection*{2. Visualización preliminar con OpenCV}
+
+Las detecciones se dibujan sobre la imagen utilizando \texttt{OpenCV}, lo cual permite una inspección rápida del desempeño del modelo. Se generan las cajas delimitadoras y etiquetas con el nivel de confianza asociado.
+
+\begin{verbatim}
+image = cv2.imread(image_path)
+for pred in result["predictions"]:
+    x, y = int(pred["x"]), int(pred["y"])
+    w, h = int(pred["width"]), int(pred["height"])
+    cv2.rectangle(image, (x-w//2, y-h//2), (x+w//2, y+h//2), (0,255,0), 2)
+\end{verbatim}
+
+Esta etapa permite validar gráficamente la calidad de las predicciones antes de integrarlas al proceso geométrico.
+
+\subsubsection*{3. Conversión de predicciones a geometrías}
+
+Para integrar las detecciones al pipeline espacial, se transforman los bounding boxes o máscaras de segmentación en polígonos de \texttt{shapely}. Esto habilita operaciones como unión geométrica, análisis de intersección y asignación espacial.
+
+\begin{verbatim}
+def pred_to_polygon(pred):
+    x, y = pred['x'], pred['y']
+    w, h = pred['width'], pred['height']
+    return box(x - w/2, y - h/2, x + w/2, y + h/2)
+\end{verbatim}
+
+La construcción de polígonos es fundamental para el filtrado geométrico posterior, especialmente en la etapa donde se utiliza la segmentación de la ruta.
+
+\subsubsection*{4. Segmentación y unión de polígonos de la ruta}
+
+El modelo adicional de segmentación permite obtener la traza de la ruta en cada imagen. A través de la unión de máscaras segmentadas se obtiene una representación geométrica coherente del corredor vial.
+
+\begin{verbatim}
+ruta_union = union_polygons(preds_ruta, buffer_px=ROUTE_BUFFER_PX)
+\end{verbatim}
+
+Esta geometría se utiliza como referencia para identificar falsas detecciones ubicadas sobre la ruta.
+
+\subsubsection*{5. Filtrado espacial de detecciones}
+
+Las detecciones de paradas se filtran en función de su ubicación relativa a la segmentación de la ruta. Aquellas ubicadas dentro de la máscara de ruta se descartan automáticamente como falsos positivos geométricos.
+
+\begin{verbatim}
+for p in preds_paradas:
+    pt = Point(p['x'], p['y'])
+    inside = ruta_union.contains(pt)
+    if inside:
+        paradas_filtradas.append(p)
+    else:
+        paradas_validas.append(p)
+\end{verbatim}
+
+Este filtro constituye la base de la segunda iteración del pipeline, reemplazando la validación multimodal y proporcionando un método más estable y replicable.
+
+\subsubsection*{6. Anotación y clasificación final}
+
+Finalmente, las imágenes se anotan con colores diferenciados (verde para detecciones válidas, rojo para filtradas) y se clasifican en carpetas separadas. Esta estructura permite auditar visualmente el rendimiento del modelo y construir conjuntos depurados para las siguientes fases.
+
+En conjunto, estas funciones permiten conectar de manera efectiva el modelo entrenado en Roboflow con el pipeline geoespacial, garantizando un flujo automatizado y reproducible de detección, filtrado y preparación de datos antes de su integración en el modelo de optimización.
+
+\section{Aplicación del modelo AHP}
+
+En esta etapa se implementó el modelo de priorización de paradas basado en el \textbf{Proceso Analítico Jerárquico (AHP)}, siguiendo la estructura metodológica propuesta por \cite{yu2024optimization} y adaptándola al contexto interdepartamental uruguayo. Mientras que el estudio original se centraba en un entorno urbano de alta densidad, la presente aplicación se orienta a corredores nacionales caracterizados por una distribución más dispersa de la población, mayor variabilidad territorial y distancias significativamente superiores entre puntos de interés.
+
+El objetivo fue evaluar la \textbf{calidad relativa de las paradas candidatas} generadas por el pipeline de detección y filtrado, mediante un conjunto de criterios compatibles con la literatura pero ajustados a la disponibilidad de datos y a las particularidades de la red vial nacional. Se utilizaron tres dimensiones principales: (i) número de puntos de interés (POI) en el entorno, (ii) distancia entre paradas adyacentes y (iii) distancia promedio a los POI dentro del radio de influencia de cada parada. Estos criterios mantienen su fundamentación conceptual original, pero fueron redefinidos para capturar adecuadamente las condiciones de operación de los corredores nacionales.
+
+\subsection{Adaptaciones metodológicas}
+
+Debido a las diferencias de escala y propósito entre un entorno urbano y uno interurbano, se implementaron adaptaciones específicas al modelo base propuesto por \cite{yu2024optimization}, con el fin de adecuarlo a la realidad de las rutas nacionales. En particular, se redefinieron los criterios para que reflejen de forma más precisa las condiciones demográficas, espaciales y operativas del contexto uruguayo:
+
+\begin{itemize}
+    \item \textbf{Criterio C\textsubscript{1} – Demanda potencial (POI number).}  
+    En lugar del inventario de puntos de interés urbanos empleado por \cite{yu2024optimization}, en el contexto interdepartamental la demanda potencial se construyó a partir de \textbf{tres componentes complementarios}:  
+    (i) la \textbf{población de la localidad más cercana} (INE),  
+    (ii) la \textbf{densidad de intersecciones viales} asociadas al corredor, y  
+    (iii) la \textbf{presencia de escuelas rurales} del subsistema ANEP dentro del radio de influencia.  
+    Estas tres fuentes fueron depuradas, georreferenciadas y documentadas en el análisis exploratorio, permitiendo construir un indicador compuesto que aproxima de manera más realista la demanda territorial a lo largo de los corredores nacionales.
+
+    \item \textbf{Criterio C\textsubscript{2} – Espaciado entre paradas (Stop Spacing).}  
+    El rango urbano de 100–500 m propuesto en \cite{yu2024optimization} resulta incompatible con la lógica operativa de rutas nacionales. Para el entorno interdepartamental se definió una \textbf{distancia mínima de 3000 m} entre paradas, coherente con la dispersión territorial y la baja densidad de detenciones en carretera. Este criterio permite evitar redundancias y mantener una cobertura adecuada a escala regional.
+
+    \item \textbf{Criterio C\textsubscript{3} – Distancia promedio parada–localidad (Stop–POI distance).}  
+    Manteniendo la estructura conceptual del indicador original, el POI se definió como el \textbf{centroide poblacional de la localidad más cercana}. El criterio mide entonces la distancia promedio entre cada parada candidata y dicho centroide, actuando como un indicador de accesibilidad física y reflejando la proximidad entre la parada y su grupo potencial de usuarios.
+\end{itemize}
+
+\subsection{Redefinición de la matriz AHP y cálculo de pesos propios}\label{AHP}
+
+A diferencia del estudio original, en esta aplicación se construyó una \textbf{nueva matriz de comparación par a par} siguiendo la metodología de \cite{Saaty1980}, ajustando los juicios relativos de importancia a la realidad interurbana.  El objetivo fue reflejar que, en las rutas nacionales, la \textbf{accesibilidad y el espaciado operativo} adquieren un peso mayor relativo que en un entorno urbano, donde la densidad de POIs domina la evaluación.
+
+La matriz de comparación se elaboró considerando los tres criterios: población (C\textsubscript{1}), espaciado entre paradas (C\textsubscript{2}) y distancia promedio a la localidad (C\textsubscript{3}).  Los juicios se establecieron a partir de discusiones entre los autores y la observación empírica del comportamiento de la red de paradas sobre la Ruta 5.  
+
+Se aplicó la escala fundamental de Saaty (1–9), en la cual 1 representa igual importancia y 9 indica importancia extrema de una variable respecto a otra.  La matriz resultante fue la siguiente:
+
+\[
+A =
+\begin{bmatrix}
+1 & 2 & 4 \\
+1/2 & 1 & 3 \\
+1/4 & 1/3 & 1
+\end{bmatrix}
+\]
+
+A partir de esta matriz, se calcularon los valores propios y el vector normalizado de ponderaciones, obteniendo la siguiente distribución:
+
+\[
+C_1 = 0.52,\quad C_2 = 0.33,\quad C_3 = 0.15.
+\]
+
+Estos valores reflejan que la \textbf{demanda potencial} (población cercana) mantiene un peso predominante, aunque el \textbf{espaciado entre paradas} gana relevancia por su impacto operativo en tramos extensos.  La \textbf{distancia promedio a la localidad} conserva un rol complementario, asociado a la accesibilidad territorial.  
+
+La consistencia de la matriz se verificó mediante el índice de consistencia, con un resultado de \(CI = 0.07 < 0.1\), lo que confirma la coherencia interna de los juicios asignados.  
+En adelante, estos pesos se utilizaron para la evaluación multicriterio y la generación del ranking de paradas sobre la Ruta 8.
+
+\subsection{Implementación del modelo}
+
+Cada parada candidata se representó mediante un vector compuesto por los tres indicadores definidos en esta primera iteración del modelo multicriterio. Los valores fueron normalizados al rango [0, 1] y combinados con los pesos obtenidos mediante el Proceso Analítico Jerárquico (AHP), resultando en una puntuación total \( P_i \) para cada alternativa:
+\[
+P_i = 0.52 \cdot x_{1i} + 0.33 \cdot x_{2i} + 0.15 \cdot x_{3i}.
+\]
+
+La matriz de comparación por pares y el vector propio de ponderaciones se implementaron en Python a través de funciones específicas, que construyen la matriz de Saaty a partir de las comparaciones definidas por el analista y calculan el autovector principal asociado al mayor autovalor. Sobre esta base se derivan el índice de consistencia (CI) y la razón de consistencia (CR), utilizando la tabla de valores aleatorios de referencia (RI). De este modo, se garantiza que los pesos utilizados en el modelo AHP provienen de una matriz de juicios internamente coherente.
+
+A partir de estos pesos, se definió una función de evaluación que, para cada parada candidata, calcula tres subpuntajes: uno asociado a la demanda potencial (en función de la población de la localidad cercana), otro al espaciado efectivo entre paradas y un tercero a la distancia entre la parada y el centroide poblacional. Estos subpuntajes se combinan según los pesos AHP para obtener una métrica \textit{total\_score} que permite comparar y ordenar las alternativas.
+
+El procesamiento numérico se realizó empleando \texttt{numpy} y \texttt{pandas}, mientras que el manejo de geometrías y distancias se llevó a cabo mediante \texttt{GeoPandas} y las operaciones de \texttt{shapely}. Esta integración facilitó la vinculación entre los resultados del modelo multicriterio y las capas espaciales, habilitando su posterior representación cartográfica y el análisis sobre la red vial.
+
+\subsection{Funciones principales del pipeline}
+
+El proceso de generación y evaluación de paradas se apoyó en un conjunto de funciones diseñadas para reproducir y adaptar la lógica del modelo de optimización propuesto por \cite{yu2024optimization}. A continuación se describen las funciones clave utilizadas en la construcción del pipeline, junto con una breve explicación conceptual y un fragmento representativo de su implementación.
+
+\subsubsection*{1. Fusión y preparación de la ruta (\texttt{\_merged\_route\_line})}
+
+Esta función toma la red vial correspondiente a la ruta en estudio y genera una única línea continua, eliminando micro-segmentaciones y uniendo tramos que presentan discontinuidades geométricas menores. Esto permite trabajar con una geometría coherente al interpolar puntos o calcular distancias.
+
+\begin{verbatim}
+u = unary_union(roads.geometry.values)
+u = snap(u, u, S)     # cierre de micro-gaps
+merged = linemerge(u)
+\end{verbatim}
+
+\subsubsection*{2. Generación de candidatos iniciales (\texttt{make\_candidates\_along\_route})}
+
+Genera puntos candidatos ubicados cada 3000 metros a lo largo de la ruta.  
+Es la primera aproximación al conjunto de posibles ubicaciones para nuevas paradas.
+
+\begin{verbatim}
+pts = []
+for tramo in route_line_segments:
+    puntos = points_every(tramo, spacing_m)
+    pts.extend(puntos)
+\end{verbatim}
+
+\subsubsection*{3. Expansión local de candidatos (\texttt{expand\_candidates})}
+
+A partir de cada punto candidato, genera versiones desplazadas hacia adelante y hacia atrás a lo largo de la ruta (por ejemplo, ±500 m). Esto incrementa la exploración local y permite capturar ubicaciones más óptimas sin aumentar el espaciado global.
+
+\begin{verbatim}
+snapped, m = _snap_point_to_line_and_m(p, tramo)
+for delta in (-expand_m, 0, +expand_m):
+    new_pts.append(tramo.interpolate(m + delta))
+\end{verbatim}
+
+\subsubsection*{4. Cálculo de centros de demanda (\texttt{kmeans\_centers})}
+
+Aglomera puntos de demanda (localidades o POIs) mediante \textit{k-means} y genera un conjunto reducido de “centros de demanda”, cada uno con un peso proporcional a la cantidad de puntos en su clúster.  
+Esto replica la lógica del paper de minimizar distancia ponderada.
+
+\begin{verbatim}
+km = KMeans(n_clusters=k, n_init="auto", random_state=42)
+labels = km.fit_predict(X)
+centers = km.cluster_centers_
+\end{verbatim}
+
+\subsubsection*{5. Cálculo del puntaje WPDM (\texttt{wpdm\_scores})}
+
+Implementa la métrica central del modelo de Yu:  
+**Weighted Proximity Demand Measure (WPDM)**.  
+Cada candidato recibe un puntaje según su proximidad a los centros de demanda, aplicando un sistema de pesos por ranking (1.0, 0.5, 0.2).
+
+\begin{verbatim}
+dists = candidates.distance(centers.geometry.iloc[i])
+idx = np.argpartition(dists, k-1)[:k]
+scores[idx] += w * rweights[:k]
+\end{verbatim}
+
+\subsubsection*{6. Selección final con espaciamiento mínimo 
+(\texttt{select\_top\_n\_with\_min\_spacing})}
+
+Esta función aplica el criterio operativo de \textbf{espaciado mínimo entre paradas}, asegurando que las alternativas seleccionadas no queden demasiado próximas entre sí. A partir del puntaje WPDM, las alternativas se ordenan de mayor a menor relevancia, y se seleccionan de manera ávida únicamente aquellas cuya distancia respecto a las ya elegidas supera el umbral definido (3000 metros).
+
+La función utiliza \texttt{GeoPandas} para calcular distancias geográficas en un sistema de coordenadas proyectado (UTM 21S), lo cual permite trabajar en unidades métricas coherentes. Los cálculos de ordenamiento, filtrado y asignación se realizan con \texttt{pandas} y \texttt{numpy}.
+\begin{verbatim}
+order = scores.sort_values("score", ascending=False).index
+for idx in order:
+    geom = g.geometry.iloc[idx]
+    if all(geom.distance(g.geometry.iloc[j]) 
+            >= min_spacing_m for j in chosen):
+        chosen.append(idx)
+\end{verbatim}
+De este modo, la selección final incorpora explícitamente uno de los criterios metodológicos clave del sistema: la necesidad de evitar ubicaciones redundantes a lo largo de la ruta.
+\subsubsection*{7. Priorización multicriterio mediante AHP 
+(\texttt{ahp\_weights} y \texttt{evaluate\_stops\_ahp})}
+
+Estas funciones implementan la etapa de \textbf{evaluación multicriterio} basada en el Proceso Analítico Jerárquico (AHP). Primero, \texttt{ahp\_weights} construye la matriz de comparaciones por pares según la escala de Saaty, calcula el autovector principal mediante álgebra lineal (\texttt{numpy}) y evalúa la consistencia interna del modelo utilizando el índice de consistencia (CI) y la razón de consistencia (CR).
+
+\begin{verbatim}
+vals, vecs = np.linalg.eig(A)
+w = vecs[:, idx].real
+w = w / w.sum()
+\end{verbatim}
+
+Luego, \texttt{evaluate\_stops\_ahp} aplica estos pesos a los criterios definidos en esta primera iteración (demanda potencial, espaciado entre paradas y distancia parada–localidad). Para ello:
+
+- obtiene distancias geográficas mediante \texttt{GeoPandas} y \texttt{shapely},  
+- normaliza los valores en \texttt{numpy},  
+- calcula subpuntajes individuales por criterio,  
+- y combina todo en un puntaje final \texttt{total\_score}.
+
+\begin{verbatim}
+total = (weights.poi_number*poi_num_score +
+         weights.stop_spacing*spacing_score +
+         weights.poi_distance*poi_dist_score)
+\end{verbatim}
+
+El resultado es una medida compuesta que refleja simultáneamente los tres criterios, habilitando la comparación directa entre alternativas y la identificación de las que presentan mayor potencial para su implementación.
+
+
+\subsubsection*{8. Optimización completa (\texttt{optimize\_single\_corridor})}
+
+Integra todos los componentes anteriores para generar candidatos, expandirlos, calcular WPDM y seleccionar las paradas finales según criterios espaciales y multicriterio (AHP).  
+Es la función que ejecuta la lógica completa del sistema.
+
+\begin{verbatim}
+candidates = make_candidates_along_route(...)
+candidates2 = expand_candidates(...)
+centers = kmeans_centers(...)
+sc = wpdm_scores(candidates2, centers)
+new_stops = select_top_n_with_min_spacing(...)
+\end{verbatim}
+
+\subsection{Resultados preliminares de la primera iteración}
+
+La primera iteración del sistema se aplicó sobre el corredor de la \textbf{Ruta 8} y constituyó la etapa inicial de experimentación del pipeline completo. En esta fase temprana se trabajó únicamente con los insumos disponibles en ese momento: las detecciones generadas por el modelo de visión por computadora, un filtrado semántico experimental basado en un modelo multimodal y un esquema preliminar del modelo AHP.
+
+En esta primera versión, el criterio de demanda se construyó exclusivamente a partir de la \textbf{población de la localidad más cercana}, dado que aún no se disponía de la caracterización completa del territorio (intersecciones viales y escuelas rurales). Por lo tanto, el AHP consideró únicamente tres factores: demanda aproximada por localidad, espaciado entre paradas y distancia entre cada parada candidata y el centroide poblacional correspondiente.
+
+Esta ejecución preliminar permitió evaluar la coherencia general del enfoque y verificar que la estructura jerárquica del modelo AHP funcionaba correctamente incluso con un conjunto reducido de criterios. Sin embargo, también evidenció que el filtrado semántico basado en el modelo multimodal no constituía una solución escalable. Su desempeño dependía fuertemente del ajuste fino de los \textit{prompts} y presentaba variabilidad significativa entre iteraciones, lo que dificultaba su uso como etapa estable dentro del pipeline. En contraste, la necesidad de un filtrado más consistente llevó a la incorporación del modelo de segmentación de la ruta, que demostró ser una alternativa más robusta, reproducible y adecuada para la aplicación a gran escala sobre los corredores nacionales.
+
+A partir de estas observaciones, la segunda iteración del pipeline incorporó mejoras sustantivas: un \textbf{nuevo mecanismo de filtrado basado en segmentación de la ruta}, así como la ampliación del criterio de demanda para incluir \textbf{intersecciones viales} y \textbf{escuelas rurales}. Estas mejoras se implementaron y validaron utilizando la descarga completa de imágenes de la \textbf{Ruta 5}, permitiendo una evaluación más representativa del desempeño del sistema. Los resultados comparativos entre ambas iteraciones se presentan en el capítulo de Resultados.
+
+\section{Modelo de segmentación de rutas}
+
+La detección de paradas basada exclusivamente en modelos de visión por computadora demostró ser insuficiente para garantizar un filtrado robusto en entornos rurales. En particular, una parte importante de los errores del detector se concentraba directamente sobre la superficie de la carretera, lo que reveló la necesidad de incorporar un componente capaz de identificar explícitamente el trazado vial dentro de cada imagen. Con este objetivo se desarrolló un \textbf{modelo de segmentación de rutas}, diseñado para delimitar de forma precisa la calzada y permitir el descarte automático de todas las detecciones que se superponen con ella.
+
+La lógica es simple pero altamente efectiva: 
+\begin{quote}
+\textit{Si una detección de parada se encuentra dentro de la región segmentada como carretera (es decir, sobre la superficie de circulación vehicular) se considera un falso positivo y se descarta.}
+\end{quote}
+Este filtrado geométrico permitió eliminar sistemáticamente detecciones espurias dentro del pavimento sin afectar las verdaderas paradas ubicadas en banquinas, accesos o laterales de las rutas.
+
+\subsection{Primera versión: segmentación del trazado de la ruta}
+
+La primera versión del modelo se entrenó exclusivamente para detectar la superficie de la carretera principal. Para ello se generó un dataset específico en Roboflow, etiquetando manualmente la superficie de la ruta en cada imagen satelital. Luego de entrenar este modelo, se aplicó el filtrado sobre las detecciones del modelo de paradas. La Figura~\ref{fig:filtro_ruta} ilustra un caso típico donde un falso positivo es correctamente descartado por encontrarse dentro de la calzada.
+\begin{figure}
+    \centering
+    \caption{Ejemplo de falso positivo descartado mediante segmentación de la superficie de la ruta.}
+    \label{fig:filtro_ruta}
+    \includegraphics[width=0.45\textwidth]{figs/imagen_satelital_filtro_camion.png}
+\end{figure}
+\subsection{Segunda versión: incorporación de caminos secundarios}
+
+Al avanzar sobre corredores con mayor complejidad geométrica (como accesos urbanos o zonas con múltiples bifurcaciones), se observó que algunas paradas reales quedaban sobre caminos vecinales o carreteras secundarias. Con el fin de evitar descartar estas detecciones válidas, se desarrolló una segunda versión del modelo de segmentación que incluye tanto el trazado principal como los caminos secundarios visibles en la imagen. 
+
+Esta ampliación permitió refinar aún más el filtrado y mejorar la coherencia espacial entre detecciones, carreteras y puntos de interés. La Figura~\ref{fig:filtro_camino} muestra un ejemplo de esta del falso positivo que generaban los caminos en la primera versión del modelo.
+\begin{figure}
+    \centering
+    \caption{Falso positivo por falta de segmentación de caminos.}
+    \label{fig:filtro_camino}
+    \includegraphics[width=0.45\textwidth]{figs/imagen_satelital_filtro_camino.png}
+\end{figure}
+En conjunto, ambos modelos—detección de paradas y segmentación de rutas—constituyen un pipeline robusto, capaz de identificar paradas reales con alta precisión y minimizar errores asociados a características visuales del pavimento.
+
+\subsection{Entrenamiento del modelo de segmentación de rutas}\label{Segmentacion de rutas}
+
+La segunda iteración del pipeline se centró en mejorar la calidad del conjunto de paradas detectadas mediante un mecanismo robusto de filtrado geométrico. A diferencia de la Iteración~1, donde la depuración se realizaba mediante validación multimodal, en esta etapa se introdujo un \textbf{modelo de segmentación de rutas} capaz de identificar de manera precisa la traza vial dentro de cada imagen satelital.
+
+Esta decisión respondió a la necesidad de obtener un criterio más estable, reproducible y menos dependiente de la interpretación semántica. El filtrado basado en segmentación permitió descartar automáticamente muchos de los falsos positivos observados en el modelo de detección —tales como vehículos, sombras, bordes de pavimento e irregularidades geométricas— al evaluar su coherencia espacial respecto al eje vial.
+
+\subsection{Construcción y entrenamiento del modelo}
+
+El modelo fue entrenado en Roboflow utilizando la arquitectura \textbf{RF-DETR-Seg (Preview)}, una variante orientada a tareas de segmentación. El dataset utilizado se construyó en dos etapas:
+
+\begin{itemize}
+    \item \textbf{Primera versión (Identificador de Rutas 1)}:  
+    Entrenada exclusivamente con imágenes de rutas nacionales. Esta versión alcanzó un rendimiento elevado (mAP@50 = 91.6\,\%, precisión = 92.5\,\%, recall = 92.0\,\%), demostrando que la geometría de las rutas es suficientemente distintiva para segmentarse de forma consistente.
+
+    \item \textbf{Segunda versión (Identificador de Rutas 2)}:  
+    Con el objetivo de mejorar la sensibilidad en entornos rurales complejos, se amplió el dataset incorporando \textbf{caminos vecinaEles y accesos secundarios}. Esta versión permitió al modelo capturar mayor variabilidad geométrica, aunque con una ligera reducción de métricas (mAP@50 = 89.9\,\%).
+\end{itemize}
+
+El resumen de modelos, versiones y métricas se presenta en la Figura~\ref{fig:seg_rutas_models}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figs/Tabla6.2.png}
+    \caption{Resumen de modelos de segmentación de rutas entrenados en Roboflow.}
+    \label{fig:seg_rutas_models}
+\end{figure}
+
+Estas versiones proporcionaron una segmentación suficientemente estable para integrarse al pipeline de filtrado de paradas.
+
+\subsection{Integración con el pipeline de detección de paradas}
+
+El modelo de segmentación se integró directamente en el procesamiento por imagen, permitiendo evaluar la ubicación de cada detección respecto al eje vial. La lógica se basa en:
+
+\begin{enumerate}
+    \item Detectar paradas mediante el modelo \textbf{RF-DETR (Nano)} entrenado en la sección anterior.
+    \item Segmentar la ruta en la misma imagen utilizando el modelo \textbf{RF-DETR-Seg}.
+    \item Construir la geometría unificada de la ruta a partir de las máscaras segmentadas.
+    \item Filtrar las detecciones de paradas ubicadas \textbf{dentro de la traza de la ruta}, al considerarse falsos positivos típicos (vehículos, manchas de pavimento, objetos sobre la calzada).
+    \item Anotar la imagen final para auditoría visual, diferenciando paradas válidas y descartadas.
+\end{enumerate}
+
+Este procedimiento se aplicó por primera vez sobre la \textbf{Ruta~5}, dado que ya se encontraba planificado el viaje de relevamiento, lo que permitió posteriormente contrastar los resultados del modelo con evidencia empírica del territorio.
+
+\subsection{Implementación en Python}
+
+La integración se implementó en Google Colab usando las bibliotecas \texttt{roboflow}, \texttt{Pillow}, \texttt{OpenCV}, \texttt{shapely} y \texttt{GeoPandas}. El fragmento siguiente resume las funciones clave del proceso:
+
+\begin{verbatim}
+# 1. Detectar paradas
+result_paradas = model_paradas.predict(
+    temp_img_path, confidence=CONF_PARADAS_MIN, overlap=OVERLAP_PCT
+).json()
+preds_paradas = result_paradas.get('predictions', [])
+
+# 2. Segmentar ruta
+result_ruta = model_ruta.predict(
+    temp_img_path, confidence=30
+).json()
+preds_ruta = result_ruta.get('predictions', [])
+
+# 3. Construir máscara geométrica de la ruta
+ruta_union = union_polygons(preds_ruta, buffer_px=ROUTE_BUFFER_PX)
+
+# 4. Filtrar detecciones según posición relativa a la ruta
+paradas_validas = []
+paradas_filtradas = []
+
+for p in preds_paradas:
+    pt = Point(p['x'], p['y'])
+    inside_route = (ruta_union is not None) and ruta_union.contains(pt)
+    if inside_route:
+        paradas_filtradas.append(p)
+    else:
+        paradas_validas.append(p)
+\end{verbatim}
+
+Este filtrado geométrico constituye el núcleo de la segunda iteración del pipeline y permitió producir un conjunto depurado de detecciones que sirvió como base para los siguientes pasos del modelo multicriterio.
+
+\subsection{Salida y clasificación final}
+
+Las imágenes procesadas se guardaron en carpetas diferenciadas según la clasificación final (``seguras'' y ``no seguras''), incorporando anotaciones visuales que permiten auditar el comportamiento del sistema. Las detecciones válidas se utilizan posteriormente como candidatos para el modelo AHP de la siguiente sección.
+
+\section{Incorporación de centros educativos e intersecciones al criterio de demanda}
+
+Tras obtener un conjunto depurado de paradas válidas mediante segmentación de la ruta en la Iteración~2, la tercera iteración del modelo multicriterio se centró en enriquecer el criterio de demanda incorporando dos nuevas fuentes de información territorial: \textbf{centros educativos rurales} e \textbf{intersecciones viales relevantes}. Ambas capas ya habían sido analizadas en el EDA; aquí se describe únicamente su integración operativa en el cálculo del modelo AHP.
+
+\subsubsection*{Intersecciones viales}
+
+A partir de la caminería nacional del MTOP, se identificaron las intersecciones entre la Ruta~5 y otras vías nacionales o departamentales. Para ello, cada geometría del dataset se comparó con los tramos del corredor principal, conservando únicamente los puntos donde se verificaban intersecciones reales:
+
+\begin{verbatim}
+def intersecciones(roads, ruta5):
+    intersections_list = []
+    for _, row in roads.iterrows():
+        geom = row['geometry']
+        if geom not in ruta5:
+            for tramo in ruta5:
+                inter = geom.intersection(tramo)
+                if not inter.is_empty:
+                    intersections_list.append(inter)
+                    break
+    return gpd.GeoDataFrame(geometry=intersections_list, crs=roads.crs)
+
+intersections_gdf = intersecciones(roads, ruta5)
+\end{verbatim}
+
+Estas intersecciones aportan un indicador de conectividad —más accesos y convergencias suelen asociarse a mayor flujo potencial.
+
+\subsubsection*{Centros educativos rurales}
+
+Se incorporó la capa de escuelas rurales del CEIP, filtrada y reproyectada a UTM 21S, y se seleccionaron únicamente aquellas ubicadas dentro de un buffer de 6 km alrededor de la Ruta~5:
+
+\begin{verbatim}
+escuelas = gpd.read_file("CEIP.shp").to_crs(epsg=32721)
+escuelas = escuelas[escuelas["Area"] == "RURAL"]
+buffer5 = route_5.buffer(6000)
+escuelas_cercanas = gpd.sjoin(
+    escuelas,
+    gpd.GeoDataFrame(geometry=buffer5, crs=route_5.crs),
+    predicate="intersects",
+    how="inner"
+)
+\end{verbatim}
+
+Los centros educativos representan un polo relevante de movilidad diaria y, por tanto, un indicador esencial para la estimación de demanda.
+
+\subsubsection*{Integración de puntos de interés}
+
+Los tres conjuntos de datos —localidades cercanas (archivo \texttt{merged\_localidades}), escuelas rurales e intersecciones— se combinaron en un único \texttt{GeoDataFrame} de puntos de interés (POI), usado para recalcular el criterio de demanda:
+
+\begin{verbatim}
+# centroides de intersecciones
+intersections_pts = intersections_gdf.geometry.apply(
+    lambda geom: geom.centroid if not geom.is_empty else None
+).dropna()
+
+intersections_pts = gpd.GeoDataFrame(
+    geometry=intersections_pts, crs=intersections_gdf.crs)
+
+# unificación
+gdf_POI = pd.concat(
+    [localidades_cercanas, escuelas_cercanas, intersections_pts],
+    ignore_index=True
+)
+gdf_POI = gpd.GeoDataFrame(gdf_POI, geometry=gdf_POI.geometry,
+                           crs=localidades_cercanas.crs)
+\end{verbatim}
+
+Este conjunto ampliado permite capturar mejor los factores reales de movilidad en el entorno de cada parada candidata.
+
+\subsubsection*{Incorporación al modelo AHP}
+
+En esta iteración, el criterio de demanda deja de depender exclusivamente de la población de la localidad cercana y pasa a definirse como la \textbf{densidad y proximidad de POIs dentro del área de influencia de cada parada candidata}. Los valores se normalizan y se integran en el vector multicriterio utilizando la misma metodología AHP explicada en secciones previas.
+
+Esta extensión del modelo permitió una representación más completa del territorio y proporcionó un ranking más realista de alternativas. Los resultados correspondientes a esta iteración se presentan en el capítulo siguiente.
+
+\section{Cierre del desarrollo}
+
+El desarrollo presentado en este capítulo consolidó la arquitectura integral del sistema de optimización de paradas, desde la construcción del pipeline de visión por computadora hasta la definición del modelo multicriterio aplicado sobre la red vial nacional. 
+
+A través de las tres iteraciones descritas, el proceso evolucionó desde una primera prueba de concepto basada únicamente en población, hasta un modelo robusto capaz de integrar filtrado geométrico, detección especializada de rutas, y un conjunto ampliado de puntos de interés compuesto por localidades, centros educativos e intersecciones viales. Cada iteración permitió refinar la calidad de los datos de entrada, mejorar la consistencia espacial de las detecciones y fortalecer la representación de la demanda real del territorio.
+
+El resultado final de este capítulo es un sistema operativo que:
+\begin{itemize}
+    \item produce un conjunto depurado de paradas detectadas mediante modelos entrenados específicamente para el contexto uruguayo;
+    \item incorpora criterios espaciales y funcionales relevantes para la movilidad rural y suburbana;
+    \item y aplica un modelo AHP perfectamente consistente para generar rankings comparables entre corredores.
+\end{itemize}
+
+Con esta estructura metodológica consolidada, el siguiente capítulo se centra en evaluar los resultados obtenidos. Allí se analizan las jerarquizaciones producidas por el modelo para las Rutas~5, 8 y 9, se comparan los patrones emergentes en función de los criterios definidos, y se discute la coherencia territorial de las soluciones sugeridas. 
+
+En conjunto, los resultados permiten evaluar no sólo la calidad técnica del modelo, sino también su utilidad como herramienta práctica para apoyar la planificación de infraestructura de transporte en áreas rurales y de baja densidad. 

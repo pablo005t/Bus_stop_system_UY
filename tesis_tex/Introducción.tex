@@ -1,0 +1,28 @@
+\chapter{Introducción}
+
+El transporte público interurbano cumple un rol esencial en la conectividad territorial del Uruguay, garantizando el acceso de la población a servicios, centros educativos y actividades económicas. En este contexto, la red de paradas constituye un elemento clave para la accesibilidad y la eficiencia del sistema, ya que su correcta localización y mantenimiento inciden directamente en la calidad del servicio y en la experiencia de los usuarios. Sin embargo, la información sobre la infraestructura y el estado actual de las paradas en rutas nacionales es fragmentaria, heterogénea y, en muchos casos, desactualizada.
+
+En 2023, la Agencia Nacional de Investigación e Innovación (ANII) y el Ministerio de Transporte y Obras Públicas (MTOP) lanzaron una convocatoria orientada a desarrollar soluciones innovadoras para la gestión de paradas de transporte público en rutas nacionales (\href{https://innovacionpublica.anii.org.uy/desafios/innovacion-en-gestion-de-paradas-nacionales/}{enlace a la convocatoria}). El objetivo del llamado era generar herramientas que permitieran relevar, georreferenciar y diagnosticar el estado de las paradas existentes, así como optimizar su planificación futura. A partir de esta iniciativa surge la motivación para el presente trabajo, impulsada por el interés del equipo en aplicar técnicas de Visión por Computadora (\textit{Computer Vision}, CV) y análisis geoespacial a un problema de impacto público real.
+
+Si bien el acceso a los datos de \textit{street view} previstos en el llamado no fue posible, se decidió continuar con el desarrollo del proyecto mediante la utilización de imágenes satelitales. Esta adaptación metodológica permitió explorar una alternativa viable para la identificación automática de estructuras asociadas a paradas y avanzar en la construcción de un sistema que integre información territorial, demográfica y de infraestructura vial. 
+
+El objetivo general del trabajo es construir un prototipo operativo que optimice el registro y la gestión de paradas oficiales en rutas nacionales, integrando:
+\begin{enumerate}[label=\roman*.]
+    \item Visión por Computadora aplicada a imágenes satelitales y aéreas.
+    \item Datos geoespaciales de infraestructura vial.
+    \item Datos demográficas del Instituto Nacional de Estadística (INE) -población por localidad- recolectados en el censo de 2023. 
+    \item Datos geoespaciales de los centros educativos de la Aministración Nacional de Educación Pública (ANEP).
+    \item Criterios de priorización basados en demanda potencial y distribución territorial. 
+\end{enumerate}
+
+Permitiendo actualizar el sistema de paradas en rutas nacionales de forma continua mediante detección automatizada y análisis geoespacial, generando información precisa para orientar decisiones de infraestructura y servicio.  \\
+
+A partir de este objetivo se definen los siguientes objetivos específicos:
+\begin{itemize}
+    \item Desarrollar un modelo de detección de paradas mediante técnicas de Visión por Computadora aplicadas a imágenes satelitales.
+    \item Integrar la información geoespacial y demográfica relevante para el análisis de cobertura y demanda.
+    \item Diseñar un sistema de priorización de paradas que combine criterios espaciales y poblacionales.
+    \item Proponer una metodología reproducible y adaptable que sirva de apoyo a la planificación del MTOP.
+\end{itemize}
+
+El presente documento se estructura de la siguiente manera: en el Capítulo 2 se describe la metodología utilizada para la construcción del sistema; el Capítulo 3 aborda el estado del arte sobre técnicas y herramientas aplicadas a la gestión de transporte y detección automática; en el Capítulo 4 se presenta el análisis exploratorio de datos (EDA) que fundamenta las decisiones de modelado;  el Capítulo 5 detalla el desarrollo e implementación del prototipo, y finalmente, el Capítulo 6 presenta las conclusiones y propuestas de mejora futuras.
